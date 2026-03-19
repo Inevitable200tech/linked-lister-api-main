@@ -361,10 +361,10 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
         </header>
 
         <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('overview')">Overview</button>
-            <button class="tab-btn" onclick="switchTab('nodes')">Sub-Instances</button>
-            <button class="tab-btn" onclick="switchTab('buckets')">R2 Buckets</button>
-            <button class="tab-btn" onclick="switchTab('files')">Files</button>
+            <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
+            <button class="tab-btn" data-tab="nodes" onclick="switchTab('nodes')">Sub-Instances</button>
+            <button class="tab-btn" data-tab="buckets" onclick="switchTab('buckets')">R2 Buckets</button>
+            <button class="tab-btn" data-tab="files" onclick="switchTab('files')">Files</button>
         </div>
 
         <div id="overview" class="tab-content active">
@@ -450,10 +450,15 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
         }
 
         function switchTab(tab) {
+            // Remove active class from all tabs and buttons
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            // Add active class to the selected tab
             document.getElementById(tab).classList.add('active');
-            event.target.classList.add('active');
+            
+            document.querySelector('[data-tab="' + tab + '"]').classList.add('active');
+            // Load data for the tab
             if (tab === 'overview') loadOverview();
             if (tab === 'nodes') loadNodes();
             if (tab === 'buckets') loadBuckets();
