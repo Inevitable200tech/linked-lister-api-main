@@ -31,9 +31,42 @@
       margin-bottom: 30px;
     }
 
-    header h1 {
+    header {
+      background: #2c3e50;
+      color: white;
+      padding: 30px;
+      border-radius: 8px;
+      margin-bottom: 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header-left h1 {
       font-size: 28px;
       margin-bottom: 10px;
+    }
+
+    .header-left p {
+      opacity: 0.9;
+      font-size: 14px;
+    }
+
+    .logout-btn {
+      background: #e74c3c;
+      color: white;
+      padding: 12px 25px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: background 0.3s;
+      white-space: nowrap;
+    }
+
+    .logout-btn:hover {
+      background: #c0392b;
     }
 
     .tabs {
@@ -312,8 +345,11 @@
 <body>
   <div class="container">
     <header>
-      <h1>📦 Storage System Dashboard</h1>
-      <p>Manage sub-instances and files</p>
+      <div class="header-left">
+        <h1>📦 Storage System Dashboard</h1>
+        <p>Manage sub-instances and files</p>
+      </div>
+      <button class="logout-btn" onclick="logout()">🚪 Logout</button>
     </header>
 
     <div class="tabs">
@@ -418,6 +454,45 @@
   </div>
 
   <script>
+    let authToken = null;
+
+    // Get token from URL or localStorage
+    function getToken() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const token = urlParams.get('token') || localStorage.getItem('token');
+      
+      if (!token) {
+        window.location.href = '/';
+        return null;
+      }
+
+      authToken = token;
+      localStorage.setItem('token', token);
+      return token;
+    }
+
+    // API call with auth
+    async function apiCall(url, options = {}) {
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+        ...options.headers
+      };
+
+      const res = await fetch(url, {
+        ...options,
+        headers
+      });
+
+      if (res.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/';
+        return null;
+      }
+
+      return res;
+    }
+
     function switchTab(tab) {
       document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -445,7 +520,8 @@
 
     async function loadStatus() {
       try {
-        const res = await fetch('/api/dashboard/status');
+        const res = await apiCall('/api/dashboard/status');
+        if (!res) return;
         const data = await res.json();
 
         document.getElementById('stat-nodes').textContent = data.stats.total_nodes;
@@ -480,7 +556,8 @@
 
     async function loadSubInstances() {
       try {
-        const res = await fetch('/api/dashboard/sub-instances');
+        const res = await apiCall('/api/dashboard/sub-instances');
+        if (!res) return;
         const data = await res.json();
 
         const nodesHtml = data.instances.map(node => `
@@ -516,12 +593,12 @@
       const url = document.getElementById('node-url').value;
 
       try {
-        const res = await fetch('/api/dashboard/sub-instances', {
+        const res = await apiCall('/api/dashboard/sub-instances', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ node_id: nodeId, url })
         });
 
+        if (!res) return;
         const data = await res.json();
 
         if (!res.ok) {
@@ -542,7 +619,10 @@
       if (!confirm(`Delete sub-instance ${nodeId}?`)) return;
 
       try {
-        const res = await fetch(`/api/dashboard/sub-instances/${nodeId}`, { method: 'DELETE' });
+        const res = await apiCall(`/api/dashboard/sub-instances/${nodeId}`, { 
+          method: 'DELETE' 
+        });
+        if (!res) return;
         const data = await res.json();
         showMessage('add-message', data.message, 'success');
         loadSubInstances();
@@ -559,10 +639,21 @@
       formData.append('file', file);
 
       try {
+        const headers = {
+          'Authorization': `Bearer ${authToken}`
+        };
+
         const res = await fetch('/api/upload', {
           method: 'POST',
+          headers,
           body: formData
         });
+
+        if (res.status === 401) {
+          localStorage.removeItem('token');
+          window.location.href = '/';
+          return;
+        }
 
         const data = await res.json();
 
@@ -582,7 +673,8 @@
 
     async function loadFiles() {
       try {
-        const res = await fetch('/api/files');
+        const res = await apiCall('/api/files');
+        if (!res) return;
         const data = await res.json();
 
         const filesHtml = data.files.map(file => `
@@ -610,12 +702,11 @@
       if (!confirm('Delete this file?')) return;
 
       try {
-        const res = await fetch('/api/delete', {
+        const res = await apiCall('/api/delete', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ hash })
         });
-
+        if (!res) return;
         const data = await res.json();
         showMessage('upload-message', 'File deleted', 'success');
         loadFiles();
@@ -624,10 +715,20 @@
       }
     }
 
+    function logout() {
+      if (confirm('Logout?')) {
+        localStorage.removeItem('token');
+        window.location.href = '/';
+      }
+    }
+
     // Load data on page load
     window.addEventListener('load', () => {
-      loadStatus();
-      setInterval(loadStatus, 5000); // Refresh every 5 seconds
+      const token = getToken();
+      if (token) {
+        loadStatus();
+        setInterval(loadStatus, 5000);
+      }
     });
   </script>
 </body>
