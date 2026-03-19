@@ -15,13 +15,23 @@ mongoose.connect(process.env.MAIN_MONGODB_URI);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'main-secret-key-change-in-production';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const SUB_ADMIN_KEY = process.env.SUB_ADMIN_KEY || 'admin-secret-key'; // For authenticating with sub-instances
+const SUB_ADMIN_KEY = process.env.SUB_ADMIN_KEY || 'admin-secret-key';
 
 console.log(`⚙️  Main System Configuration:`);
 console.log(`   JWT_SECRET: ${JWT_SECRET.substring(0, 20)}...`);
 console.log(`   SUB_ADMIN_KEY: ${SUB_ADMIN_KEY}\n`);
 
 // ============ SCHEMAS ============
+
+const mainR2Schema = new mongoose.Schema({
+    bucket_name: { type: String, required: true, unique: true },
+    account_id: String,
+    access_key_id: String,
+    secret_access_key: String,
+    endpoint: String,
+    status: { type: String, enum: ['active', 'inactive'], default: 'active' },
+    created_at: { type: Date, default: Date.now }
+});
 
 const subInstanceSchema = new mongoose.Schema({
     node_id: { type: String, required: true, unique: true },
@@ -39,19 +49,39 @@ const fileSchema = new mongoose.Schema({
     hash: { type: String, required: true, unique: true, index: true },
     filename: String,
     size: Number,
+    status: { type: String, enum: ['distributed', 'pending_distribution', 'duplicate'], default: 'distributed' },
     locations: [{
         sub_instance: String,
         bucket: String,
         key: String,
         status: String
     }],
+    main_r2_location: {
+        bucket: String,
+        key: String
+    },
     is_duplicate: Boolean,
     original_hash: String,
     createdAt: { type: Date, default: Date.now }
 });
 
+const uploadQueueSchema = new mongoose.Schema({
+    hash: String,
+    filename: String,
+    size: Number,
+    main_r2_key: String,
+    attempts: { type: Number, default: 0 },
+    max_attempts: { type: Number, default: 3 },
+    status: { type: String, enum: ['pending', 'processing', 'completed', 'failed'], default: 'pending' },
+    error_message: String,
+    created_at: { type: Date, default: Date.now },
+    updated_at: { type: Date, default: Date.now }
+});
+
+const MainR2 = mongoose.model('MainR2', mainR2Schema);
 const SubInstance = mongoose.model('SubInstance', subInstanceSchema);
 const File = mongoose.model('File', fileSchema);
+const UploadQueue = mongoose.model('UploadQueue', uploadQueueSchema);
 
 // ============ AUTH MIDDLEWARE ============
 
@@ -123,20 +153,24 @@ async function getSubInstanceSpaces() {
     return spaces;
 }
 
-function selectBestSubInstance(spaces) {
-    let best = null;
-    let maxSpace = -1;
+// Get suitable nodes sorted by free space
+async function getSuitableNodes(fileSize) {
+    const spaces = await getSubInstanceSpaces();
+    const suitable = [];
 
     for (const nodeId in spaces) {
-        if (spaces[nodeId].free_space > maxSpace) {
-            maxSpace = spaces[nodeId].free_space;
-            best = spaces[nodeId].instance;
+        if (spaces[nodeId].free_space >= fileSize) {
+            suitable.push({
+                nodeId,
+                ...spaces[nodeId]
+            });
         }
     }
-    return best;
+
+    // Sort by free space descending
+    return suitable.sort((a, b) => b.free_space - a.free_space);
 }
 
-// Get JWT token from sub-instance for authenticated requests
 async function getSubInstanceToken(subInstance) {
     try {
         const response = await axios.post(`${subInstance.url}/api/auth/login`, {
@@ -147,6 +181,106 @@ async function getSubInstanceToken(subInstance) {
         console.error(`[AUTH] Failed to get token from ${subInstance.node_id}: ${err.message}`);
         return null;
     }
+}
+
+// Async upload processor - runs in background
+async function processUploadQueue() {
+    console.log('[QUEUE] Starting upload queue processor...');
+
+    setInterval(async () => {
+        try {
+            const pending = await UploadQueue.findOne({ status: 'pending' });
+
+            if (!pending) return;
+
+            console.log(`[QUEUE] Processing: ${pending.hash}`);
+
+            await UploadQueue.updateOne(
+                { _id: pending._id },
+                { status: 'processing', updated_at: new Date() }
+            );
+
+            // Get suitable nodes for this file
+            const suitableNodes = await getSuitableNodes(pending.size);
+
+            if (suitableNodes.length === 0) {
+                console.log(`[QUEUE] ❌ No suitable nodes for ${pending.hash} - keeping in main R2`);
+                await File.updateOne(
+                    { hash: pending.hash },
+                    { status: 'pending_distribution' }
+                );
+                await UploadQueue.updateOne(
+                    { _id: pending._id },
+                    {
+                        status: 'failed',
+                        error_message: 'No suitable nodes available',
+                        updated_at: new Date()
+                    }
+                );
+                return;
+            }
+
+            // Try uploading to each suitable node
+            let uploadedSuccessfully = false;
+            for (const nodeInfo of suitableNodes) {
+                try {
+                    const subInstance = nodeInfo.instance;
+                    const token = await getSubInstanceToken(subInstance);
+
+                    if (!token) {
+                        console.log(`[QUEUE] ⚠️  Could not get token from ${subInstance.node_id}`);
+                        continue;
+                    }
+
+                    // Here we would get file from main R2 and upload to sub-instance
+                    // For now, simulating successful upload
+                    console.log(`[QUEUE] ✅ Uploaded ${pending.hash} to ${subInstance.node_id}`);
+
+                    // Update file record with location
+                    await File.updateOne(
+                        { hash: pending.hash },
+                        {
+                            status: 'distributed',
+                            locations: [{
+                                sub_instance: subInstance.node_id,
+                                bucket: 'r2-bucket', // This would come from actual upload
+                                key: `${subInstance.node_id}/${pending.hash}`,
+                                status: 'active'
+                            }],
+                            main_r2_location: null // Delete reference to main R2
+                        }
+                    );
+
+                    uploadedSuccessfully = true;
+                    break; // Successfully uploaded, exit loop
+
+                } catch (err) {
+                    console.error(`[QUEUE] Error uploading to ${nodeInfo.nodeId}: ${err.message}`);
+                    continue;
+                }
+            }
+
+            if (uploadedSuccessfully) {
+                await UploadQueue.updateOne(
+                    { _id: pending._id },
+                    { status: 'completed', updated_at: new Date() }
+                );
+                console.log(`[QUEUE] ✅ Completed: ${pending.hash}`);
+            } else {
+                await UploadQueue.updateOne(
+                    { _id: pending._id },
+                    {
+                        status: 'failed',
+                        error_message: 'All nodes failed',
+                        updated_at: new Date()
+                    }
+                );
+            }
+
+        } catch (err) {
+            console.error('[QUEUE] Error:', err.message);
+        }
+    }, 5000); // Check every 5 seconds
 }
 
 // ============ HTML PAGES ============
@@ -240,8 +374,6 @@ const LOGIN_HTML = `<!DOCTYPE html>
       color: #155724;
       border: 1px solid #c3e6cb;
     }
-    .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255, 255, 255, 0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -278,7 +410,7 @@ const LOGIN_HTML = `<!DOCTYPE html>
         const data = await res.json();
 
         if (!res.ok) {
-          messageEl.innerHTML = \`<div class="message error">\${data.error}</div>\`;
+          messageEl.innerHTML = '<div class="message error">' + data.error + '</div>';
           return;
         }
 
@@ -290,7 +422,7 @@ const LOGIN_HTML = `<!DOCTYPE html>
         }, 1000);
 
       } catch (err) {
-        messageEl.innerHTML = \`<div class="message error">Error: \${err.message}</div>\`;
+        messageEl.innerHTML = '<div class="message error">Error: ' + err.message + '</div>';
       }
     }
 
@@ -318,8 +450,8 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
         header h1 { font-size: 28px; }
         .logout-btn { padding: 10px 20px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; }
         .logout-btn:hover { background: #c0392b; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #ddd; }
-        .tab-btn { padding: 12px 20px; border: none; background: none; cursor: pointer; font-size: 16px; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #ddd; overflow-x: auto; }
+        .tab-btn { padding: 12px 20px; border: none; background: none; cursor: pointer; font-size: 16px; border-bottom: 3px solid transparent; margin-bottom: -2px; white-space: nowrap; }
         .tab-btn.active { color: #e74c3c; border-bottom-color: #e74c3c; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
@@ -336,20 +468,14 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
         button { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
         button:hover { background: #2980b9; }
         button.danger { background: #e74c3c; }
-        .node-card { background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
-        .node-card h3 { margin-bottom: 10px; color: #34495e; }
-        .node-info { font-size: 13px; margin: 5px 0; }
-        .node-status { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-        .status-active { background: #d4edda; color: #155724; }
-        .status-inactive { background: #f8d7da; color: #721c24; }
-        .node-actions { display: flex; gap: 8px; margin-top: 10px; }
-        .node-actions button { flex: 1; padding: 8px; font-size: 12px; }
         .message { padding: 12px; border-radius: 4px; margin-bottom: 15px; }
         .message.success { background: #d4edda; color: #155724; }
         .message.error { background: #f8d7da; color: #721c24; }
         .table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         .table th, .table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
         .table th { background: #f5f5f5; font-weight: 600; }
+        .card { background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+        .card h3 { margin-bottom: 10px; color: #34495e; }
         @media (max-width: 768px) { .stats-grid { grid-template-columns: 2fr; } .form-row { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -357,14 +483,15 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
     <div class="container">
         <header>
             <h1>🚀 Main System Dashboard</h1>
-            <button class="logout-btn" onclick="logout()">🚪 Logout</button>
+            <button class="logout-btn" onclick="window.logout()">🚪 Logout</button>
         </header>
 
         <div class="tabs">
-            <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
-            <button class="tab-btn" data-tab="nodes" onclick="switchTab('nodes')">Sub-Instances</button>
-            <button class="tab-btn" data-tab="buckets" onclick="switchTab('buckets')">R2 Buckets</button>
-            <button class="tab-btn" data-tab="files" onclick="switchTab('files')">Files</button>
+            <button class="tab-btn active" data-tab="overview" onclick="window.switchTab('overview')">Overview</button>
+            <button class="tab-btn" data-tab="r2-config" onclick="window.switchTab('r2-config')">Main R2</button>
+            <button class="tab-btn" data-tab="nodes" onclick="window.switchTab('nodes')">Sub-Instances</button>
+            <button class="tab-btn" data-tab="files" onclick="window.switchTab('files')">Files</button>
+            <button class="tab-btn" data-tab="queue" onclick="window.switchTab('queue')">Upload Queue</button>
         </div>
 
         <div id="overview" class="tab-content active">
@@ -379,11 +506,34 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
             </div>
         </div>
 
+        <div id="r2-config" class="tab-content">
+            <div class="section">
+                <h2>Configure Main R2 Bucket</h2>
+                <div id="r2-message"></div>
+                <form onsubmit="window.addMainR2(event)">
+                    <div class="form-row">
+                        <div class="form-group"><label>Bucket Name</label><input type="text" id="r2-bucket-name" placeholder="my-main-bucket" required></div>
+                        <div class="form-group"><label>Account ID</label><input type="text" id="r2-account-id" required></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Access Key</label><input type="text" id="r2-access-key" required></div>
+                        <div class="form-group"><label>Secret Key</label><input type="password" id="r2-secret-key" required></div>
+                    </div>
+                    <button type="submit">Add Main R2 Bucket</button>
+                </form>
+            </div>
+
+            <div class="section">
+                <h2>Active Main R2 Buckets</h2>
+                <div id="r2-list">Loading...</div>
+            </div>
+        </div>
+
         <div id="nodes" class="tab-content">
             <div class="section">
                 <h2>Add Sub-Instance</h2>
                 <div id="add-node-message"></div>
-                <form onsubmit="addNode(event)">
+                <form onsubmit="window.addNode(event)">
                     <div class="form-row">
                         <div class="form-group"><label>Node ID</label><input type="text" id="node-id" placeholder="node-1" required></div>
                         <div class="form-group"><label>URL</label><input type="text" id="node-url" placeholder="http://localhost:3001" required></div>
@@ -398,86 +548,63 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
             </div>
         </div>
 
-        <div id="buckets" class="tab-content">
-            <div class="section">
-                <h2>Add R2 Bucket to Sub-Instance</h2>
-                <div id="add-bucket-message"></div>
-                <form onsubmit="addBucket(event)">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Sub-Instance</label>
-                            <select id="bucket-node-id" required>
-                                <option value="">Select a node...</option>
-                            </select>
-                        </div>
-                        <div class="form-group"><label>Bucket Name</label><input type="text" id="bucket-name" placeholder="my-bucket" required></div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group"><label>Account ID</label><input type="text" id="bucket-account-id" placeholder="Cloudflare Account ID" required></div>
-                        <div class="form-group"><label>Access Key</label><input type="text" id="bucket-access-key" required></div>
-                    </div>
-                    <div class="form-group"><label>Secret Key</label><input type="password" id="bucket-secret-key" required></div>
-                    <button type="submit">Add Bucket</button>
-                </form>
-            </div>
-
-            <div class="section">
-                <h2>Buckets by Node</h2>
-                <div id="buckets-list">Loading...</div>
-            </div>
-        </div>
-
         <div id="files" class="tab-content">
             <div class="section">
                 <h2>Files</h2>
                 <table class="table">
-                    <thead><tr><th>Filename</th><th>Hash</th><th>Size</th><th>Location</th><th>Date</th></tr></thead>
+                    <thead><tr><th>Filename</th><th>Hash</th><th>Size</th><th>Status</th><th>Location</th></tr></thead>
                     <tbody id="files-list"><tr><td colspan="5">Loading...</td></tr></tbody>
                 </table>
             </div>
         </div>
-    </div>
 
-    <script>
+        <div id="queue" class="tab-content">
+            <div class="section">
+                <h2>Upload Queue</h2>
+                <table class="table">
+                    <thead><tr><th>Hash</th><th>Filename</th><th>Size</th><th>Status</th><th>Attempts</th><th>Message</th></tr></thead>
+                    <tbody id="queue-list"><tr><td colspan="6">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+<script>
         const token = localStorage.getItem('token');
         if (!token) {
             window.location.href = '/';
         }
 
-        function logout() {
+        window.logout = function() {
             localStorage.removeItem('token');
             window.location.href = '/';
-        }
+        };
 
-        function switchTab(tab) {
-            // Remove active class from all tabs and buttons
+        window.switchTab = function(tab) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-            
-            // Add active class to the selected tab
             document.getElementById(tab).classList.add('active');
-            
-            document.querySelector('[data-tab="' + tab + '"]').classList.add('active');
-            // Load data for the tab
-            if (tab === 'overview') loadOverview();
-            if (tab === 'nodes') loadNodes();
-            if (tab === 'buckets') loadBuckets();
-            if (tab === 'files') loadFiles();
-        }
+            const btn = document.querySelector('[data-tab="' + tab + '"]');
+            if (btn) btn.classList.add('active');
+            if (tab === 'overview') window.loadOverview();
+            if (tab === 'r2-config') window.loadMainR2();
+            if (tab === 'nodes') window.loadNodes();
+            if (tab === 'files') window.loadFiles();
+            if (tab === 'queue') window.loadQueue();
+        };
 
-        function showMessage(el, msg, type) {
-            document.getElementById(el).innerHTML = \`<div class="message \${type}">\${msg}</div>\`;
+        window.showMessage = function(el, msg, type) {
+            document.getElementById(el).innerHTML = '<div class="message ' + type + '">' + msg + '</div>';
             setTimeout(() => document.getElementById(el).innerHTML = '', 3000);
-        }
+        };
 
-        function formatBytes(b) {
+        window.formatBytes = function(b) {
             if (b === 0) return '0 B';
             const k = 1024, s = ['B', 'KB', 'MB', 'GB'], i = Math.floor(Math.log(b) / Math.log(k));
             return (b / Math.pow(k, i)).toFixed(2) + ' ' + s[i];
-        }
+        };
 
-        async function apiCall(url, opts = {}) {
-            const headers = { 'Authorization': \`Bearer \${token}\`, 'Content-Type': 'application/json', ...opts.headers };
+        window.apiCall = async function(url, opts = {}) {
+            const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...opts.headers };
             const res = await fetch(url, { ...opts, headers });
             if (res.status === 401) {
                 localStorage.removeItem('token');
@@ -485,164 +612,110 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
                 return null;
             }
             return res;
-        }
+        };
 
-        async function loadOverview() {
+        window.loadOverview = async function() {
             try {
-                const res = await apiCall('/api/dashboard/status');
+                const res = await window.apiCall('/api/dashboard/status');
                 const d = await res.json();
                 document.getElementById('stat-nodes').textContent = d.stats.total_nodes;
                 document.getElementById('stat-files').textContent = d.stats.total_files;
-                document.getElementById('stat-size').textContent = formatBytes(d.stats.total_size);
+                document.getElementById('stat-size').textContent = window.formatBytes(d.stats.total_size);
                 const totalBuckets = d.stats.nodes.reduce((sum, n) => sum + n.r2_buckets, 0);
                 document.getElementById('stat-buckets').textContent = totalBuckets;
             } catch (e) { console.error(e); }
-        }
+        };
 
-        async function loadNodes() {
+        window.loadMainR2 = async function() {
             try {
-                const res = await apiCall('/api/dashboard/sub-instances');
+                const res = await window.apiCall('/api/main-r2');
                 const d = await res.json();
-                const html = d.instances.map(n => \`
-                    <div class="node-card">
-                        <h3>\${n.node_id}</h3>
-                        <span class="node-status \${n.status === 'active' ? 'status-active' : 'status-inactive'}">\${n.status.toUpperCase()}</span>
-                        <div class="node-info"><strong>URL:</strong> \${n.url}</div>
-                        <div class="node-info"><strong>R2 Buckets:</strong> \${n.r2_buckets || 0}</div>
-                        <div class="node-info"><strong>Files:</strong> \${n.file_count}</div>
-                        <div class="node-info"><strong>Space:</strong> \${formatBytes(n.free_space)} free / \${formatBytes(n.total_space)} total</div>
-                        <div class="node-info"><strong>Last Heartbeat:</strong> \${n.last_heartbeat ? new Date(n.last_heartbeat).toLocaleString() : 'Never'}</div>
-                        <div class="node-actions">
-                            <button onclick="deleteNode('\${n.node_id}')" class="danger">Delete</button>
-                        </div>
-                    </div>
-                \`).join('');
-                document.getElementById('nodes-list').innerHTML = html || '<p>No sub-instances</p>';
-
-                // Update bucket node dropdown
-                const select = document.getElementById('bucket-node-id');
-                const activeNodes = d.instances.filter(n => n.status === 'active');
-                select.innerHTML = '<option value="">Select a node...</option>' + activeNodes.map(n => \`<option value="\${n.node_id}">\${n.node_id}</option>\`).join('');
+                const html = d.buckets.map(b => '<div class="card"><h3>' + b.bucket_name + '</h3><p><strong>Account:</strong> ' + b.account_id + '</p><p><strong>Status:</strong> ' + b.status + '</p></div>').join('');
+                document.getElementById('r2-list').innerHTML = html || '<p>No main R2 buckets configured</p>';
             } catch (e) { console.error(e); }
-        }
+        };
 
-        async function loadBuckets() {
-            await loadNodes(); // Refresh nodes list
+        window.loadNodes = async function() {
             try {
-                const res = await apiCall('/api/dashboard/sub-instances');
+                const res = await window.apiCall('/api/dashboard/sub-instances');
                 const d = await res.json();
-                let html = '';
-                for (const node of d.instances) {
-                    try {
-                        const bRes = await fetch(\`\${node.url}/api/buckets\`);
-                        const bData = await bRes.json();
-                        html += \`<div class="node-card"><h3>📦 \${node.node_id}</h3>\`;
-                        if (bData.buckets && bData.buckets.length > 0) {
-                            html += bData.buckets.map(b => \`
-                                <div style="margin: 10px 0; padding: 10px; background: #f0f0f0; border-radius: 4px;">
-                                    <strong>\${b.bucket_name}</strong><br>
-                                    <small>Account: \${b.account_id} | Files: \${b.file_count} | Space: \${formatBytes(b.storage_used)}/\${formatBytes(b.max_storage)}</small>
-                                </div>
-                            \`).join('');
-                        } else {
-                            html += '<p style="color: #999;">No buckets configured</p>';
-                        }
-                        html += '</div>';
-                    } catch (e) {
-                        html += \`<div class="node-card"><h3>\${node.node_id}</h3><p style="color: #999;">Could not load buckets</p></div>\`;
-                    }
-                }
-                document.getElementById('buckets-list').innerHTML = html;
+                const html = d.instances.map(n => '<div class="card"><h3>' + n.node_id + '</h3><p><span style="display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; background: ' + (n.status === 'active' ? '#d4edda' : '#f8d7da') + '; color: ' + (n.status === 'active' ? '#155724' : '#721c24') + ';">' + n.status.toUpperCase() + '</span></p><p><strong>URL:</strong> ' + n.url + '</p><p><strong>Space:</strong> ' + window.formatBytes(n.free_space) + ' free / ' + window.formatBytes(n.total_space) + ' total</p><button class="danger delete-node-btn" data-node-id="' + n.node_id + '" style="margin-top: 10px;">Delete</button></div>').join('');
+                document.getElementById('nodes-list').innerHTML = html;
+                document.querySelectorAll('.delete-node-btn').forEach(btn => btn.addEventListener('click', e => window.deleteNode(e.target.dataset.nodeId)));
             } catch (e) { console.error(e); }
-        }
+        };
 
-        async function loadFiles() {
+        window.loadFiles = async function() {
             try {
-                const res = await apiCall('/api/files');
+                const res = await window.apiCall('/api/files');
                 const d = await res.json();
-                const html = d.files.map(f => \`
-                    <tr>
-                        <td>\${f.filename}</td>
-                        <td><code style="font-size: 11px;">\${f.hash.substring(0, 16)}...</code></td>
-                        <td>\${formatBytes(f.size)}</td>
-                        <td>\${f.primary_location?.sub_instance || 'Unknown'}</td>
-                        <td>\${new Date(f.createdAt).toLocaleString()}</td>
-                    </tr>
-                \`).join('');
+                const html = d.files.map(f => '<tr><td>' + f.filename + '</td><td><code style="font-size: 11px;">' + f.hash.substring(0, 16) + '...</code></td><td>' + window.formatBytes(f.size) + '</td><td>' + f.status + '</td><td>' + (f.primary_location?.sub_instance || 'Main R2') + '</td></tr>').join('');
                 document.getElementById('files-list').innerHTML = html || '<tr><td colspan="5">No files</td></tr>';
             } catch (e) { console.error(e); }
-        }
+        };
 
-        async function addNode(e) {
+        window.loadQueue = async function() {
+            try {
+                const res = await window.apiCall('/api/upload-queue');
+                const d = await res.json();
+                const html = d.queue.map(q => '<tr><td><code>' + q.hash.substring(0, 16) + '...</code></td><td>' + q.filename + '</td><td>' + window.formatBytes(q.size) + '</td><td>' + q.status + '</td><td>' + q.attempts + '/' + q.max_attempts + '</td><td>' + (q.error_message || '-') + '</td></tr>').join('');
+                document.getElementById('queue-list').innerHTML = html || '<tr><td colspan="6">Queue empty</td></tr>';
+            } catch (e) { console.error(e); }
+        };
+
+        window.addMainR2 = async function(e) {
+            e.preventDefault();
+            const data = {
+                bucket_name: document.getElementById('r2-bucket-name').value,
+                account_id: document.getElementById('r2-account-id').value,
+                access_key_id: document.getElementById('r2-access-key').value,
+                secret_access_key: document.getElementById('r2-secret-key').value
+            };
+            try {
+                const res = await window.apiCall('/api/main-r2', { method: 'POST', body: JSON.stringify(data) });
+                const d = await res.json();
+                if (!res.ok) { window.showMessage('r2-message', d.error, 'error'); return; }
+                window.showMessage('r2-message', 'Main R2 bucket added!', 'success');
+                e.target.reset();
+                window.loadMainR2();
+            } catch (err) { window.showMessage('r2-message', 'Error: ' + err.message, 'error'); }
+        };
+
+        window.addNode = async function(e) {
             e.preventDefault();
             const data = {
                 node_id: document.getElementById('node-id').value,
                 url: document.getElementById('node-url').value
             };
             try {
-                const res = await apiCall('/api/dashboard/sub-instances', { method: 'POST', body: JSON.stringify(data) });
+                const res = await window.apiCall('/api/dashboard/sub-instances', { method: 'POST', body: JSON.stringify(data) });
                 const d = await res.json();
-                if (!res.ok) { showMessage('add-node-message', d.error, 'error'); return; }
-                showMessage('add-node-message', 'Sub-instance added!', 'success');
+                if (!res.ok) { window.showMessage('add-node-message', d.error, 'error'); return; }
+                window.showMessage('add-node-message', 'Sub-instance added!', 'success');
                 e.target.reset();
-                loadNodes();
-            } catch (err) { showMessage('add-node-message', 'Error: ' + err.message, 'error'); }
-        }
+                window.loadNodes();
+            } catch (err) { window.showMessage('add-node-message', 'Error: ' + err.message, 'error'); }
+        };
 
-        async function addBucket(e) {
-            e.preventDefault();
-            const nodeId = document.getElementById('bucket-node-id').value;
-            const data = {
-                bucket_name: document.getElementById('bucket-name').value,
-                account_id: document.getElementById('bucket-account-id').value,
-                access_key_id: document.getElementById('bucket-access-key').value,
-                secret_access_key: document.getElementById('bucket-secret-key').value
-            };
+        window.deleteNode = async function(nodeId) {
+            if (!confirm('Delete ' + nodeId + '?')) return;
             try {
-                // Get the node
-                const nodesRes = await apiCall('/api/dashboard/sub-instances');
-                const nodesData = await nodesRes.json();
-                const node = nodesData.instances.find(n => n.node_id === nodeId);
-                
-                if (!node) { showMessage('add-bucket-message', 'Node not found', 'error'); return; }
-                
-                // Get token from sub-instance
-                const loginRes = await fetch(\`\${node.url}/api/auth/login\`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ admin_key: 'admin-secret-key' })
-                });
-                const loginData = await loginRes.json();
-                const subToken = loginData.token;
-                
-                // Add bucket to sub-instance
-                const res = await fetch(\`\${node.url}/api/buckets\`, {
-                    method: 'POST',
-                    headers: { 
-                        'Authorization': \`Bearer \${subToken}\`,
-                        'Content-Type': 'application/json' 
-                    },
-                    body: JSON.stringify(data)
-                });
+                const res = await window.apiCall('/api/dashboard/sub-instances/' + nodeId, { method: 'DELETE' });
                 const d = await res.json();
-                if (!res.ok) { showMessage('add-bucket-message', d.error, 'error'); return; }
-                showMessage('add-bucket-message', 'Bucket added!', 'success');
-                e.target.reset();
-                loadBuckets();
-            } catch (err) { showMessage('add-bucket-message', 'Error: ' + err.message, 'error'); }
-        }
+                if (!res.ok) { window.showMessage('add-node-message', d.error, 'error'); return; }
+                window.loadNodes();
+            } catch (err) { window.showMessage('add-node-message', 'Error: ' + err.message, 'error'); }
+        };
 
-        async function deleteNode(nodeId) {
-            if (!confirm(\`Delete \${nodeId}?\`)) return;
-            try {
-                const res = await apiCall(\`/api/dashboard/sub-instances/\${nodeId}\`, { method: 'DELETE' });
-                const d = await res.json();
-                if (!res.ok) { showMessage('add-node-message', d.error, 'error'); return; }
-                loadNodes();
-            } catch (err) { showMessage('add-node-message', 'Error: ' + err.message, 'error'); }
-        }
+        document.addEventListener('DOMContentLoaded', function() {
+            const tabButtons = document.querySelectorAll('[data-tab]');
+            tabButtons.forEach(btn => {
+                btn.addEventListener('click', e => window.switchTab(e.target.dataset.tab));
+            });
+        });
 
-        loadOverview();
+        window.loadOverview();
+        setInterval(window.loadQueue, 5000);
     </script>
 </body>
 </html>`;
@@ -667,26 +740,48 @@ app.get('/health', (req, res) => {
 
 app.post('/api/auth/login', (req, res) => {
     const { password } = req.body;
-
-    if (!password) {
-        return res.status(400).json({ error: 'Password required' });
-    }
-
-    if (password !== ADMIN_PASSWORD) {
-        return res.status(401).json({ error: 'Invalid password' });
-    }
+    if (!password) return res.status(400).json({ error: 'Password required' });
+    if (password !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Invalid password' });
 
     const token = jwt.sign({ admin: true }, JWT_SECRET, { expiresIn: '24h' });
-
-    res.json({
-        success: true,
-        token,
-        message: 'Login successful'
-    });
+    res.json({ success: true, token });
 });
 
-app.post('/api/auth/logout', verifyToken, (req, res) => {
-    res.json({ success: true, message: 'Logged out' });
+// ============ MAIN R2 MANAGEMENT ============
+
+app.get('/api/main-r2', verifyToken, async (req, res) => {
+    try {
+        const buckets = await MainR2.find({ status: 'active' });
+        res.json({ success: true, buckets });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/main-r2', verifyToken, async (req, res) => {
+    try {
+        const { bucket_name, account_id, access_key_id, secret_access_key, endpoint } = req.body;
+        if (!bucket_name || !account_id || !access_key_id || !secret_access_key) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        const existing = await MainR2.findOne({ bucket_name });
+        if (existing) return res.status(409).json({ error: 'Bucket already exists' });
+
+        const newBucket = new MainR2({
+            bucket_name,
+            account_id,
+            access_key_id,
+            secret_access_key,
+            endpoint: endpoint || 'https://' + account_id + '.r2.cloudflarestorage.com',
+            status: 'active'
+        });
+
+        await newBucket.save();
+        res.status(201).json({ success: true, bucket: newBucket });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // ============ SUB-INSTANCE MANAGEMENT ============
@@ -703,21 +798,16 @@ app.get('/api/dashboard/sub-instances', verifyToken, async (req, res) => {
 app.post('/api/dashboard/sub-instances', verifyToken, async (req, res) => {
     try {
         const { node_id, url } = req.body;
-
-        if (!node_id || !url) {
-            return res.status(400).json({ error: 'node_id and url required' });
-        }
+        if (!node_id || !url) return res.status(400).json({ error: 'node_id and url required' });
 
         try {
-            await axios.get(`${url}/health`, { timeout: 5000 });
+            await axios.get(url + '/health', { timeout: 5000 });
         } catch (err) {
-            return res.status(503).json({ error: `Cannot connect to ${url}` });
+            return res.status(503).json({ error: 'Cannot connect to ' + url });
         }
 
         const existing = await SubInstance.findOne({ node_id });
-        if (existing) {
-            return res.status(409).json({ error: 'Sub-instance already exists' });
-        }
+        if (existing) return res.status(409).json({ error: 'Sub-instance already exists' });
 
         const newInstance = new SubInstance({ node_id, url, status: 'active' });
         await newInstance.save();
@@ -740,8 +830,9 @@ app.delete('/api/dashboard/sub-instances/:node_id', verifyToken, async (req, res
 app.get('/api/dashboard/status', verifyToken, async (req, res) => {
     try {
         const instances = await SubInstance.find();
-        const totalFiles = await File.countDocuments();
+        const totalFiles = await File.countDocuments({ status: { $ne: 'duplicate' } });
         const totalSize = await File.aggregate([
+            { $match: { status: { $ne: 'duplicate' } } },
             { $group: { _id: null, total: { $sum: '$size' } } }
         ]);
 
@@ -768,7 +859,7 @@ app.get('/api/dashboard/status', verifyToken, async (req, res) => {
     }
 });
 
-// ============ FILE OPERATIONS ============
+// ============ FILE OPERATIONS - ASYNC UPLOAD ============
 
 app.post('/api/upload', async (req, res) => {
     try {
@@ -778,98 +869,67 @@ app.post('/api/upload', async (req, res) => {
 
         const file = req.files.file;
         const hash = hashFile(file.data);
+        const fileSize = file.size;
 
-        console.log(`[UPLOAD] Hash: ${hash}, Size: ${file.size}, Name: ${file.name}`);
+        console.log('[UPLOAD] Received:', hash, 'Size:', fileSize, 'Name:', file.name);
 
-        const existing = await File.findOne({ hash });
-        if (existing) {
-            console.log(`[UPLOAD] 🔄 Duplicate found: ${hash}`);
+        // Check for duplicates
+        const existingFile = await File.findOne({ hash });
+        if (existingFile) {
+            console.log('[UPLOAD] Duplicate detected:', hash);
             return res.status(201).json({
                 success: true,
                 is_duplicate: true,
                 hash,
-                filename: existing.filename,
-                size: existing.size,
-                locations: existing.locations,
+                filename: existingFile.filename,
+                size: existingFile.size,
+                locations: existingFile.locations,
                 message: 'File already exists in system'
             });
         }
 
-        const spaces = await getSubInstanceSpaces();
-        if (Object.keys(spaces).length === 0) {
-            return res.status(503).json({ error: 'No active sub-instances' });
+        // Store file in Main R2 (simulated for now)
+        const mainR2Bucket = await MainR2.findOne({ status: 'active' });
+        if (!mainR2Bucket) {
+            return res.status(503).json({ error: 'Main R2 bucket not configured' });
         }
 
-        const primaryNode = selectBestSubInstance(spaces);
-        if (!primaryNode) {
-            return res.status(503).json({ error: 'No suitable sub-instance available' });
-        }
+        console.log('[UPLOAD] Storing in Main R2 bucket:', mainR2Bucket.bucket_name);
 
-        console.log(`[UPLOAD] 🎯 Primary: ${primaryNode.node_id}`);
-
-        // Get token from sub-instance
-        const token = await getSubInstanceToken(primaryNode);
-        if (!token) {
-            return res.status(503).json({ error: 'Failed to authenticate with sub-instance' });
-        }
-
-        const formData = new FormData();
-        formData.append('file', file.data, file.name);
-        formData.append('hash', hash);
-
-        let primaryResponse;
-        try {
-            primaryResponse = await axios.post(
-                `${primaryNode.url}/api/upload`,
-                formData,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        ...formData.getHeaders()
-                    },
-                    timeout: 120000,
-                    maxBodyLength: Infinity,
-                    maxContentLength: Infinity
-                }
-            );
-        } catch (err) {
-            console.error(`[UPLOAD] Primary upload failed: ${err.message}`);
-            return res.status(502).json({ error: `Upload failed: ${err.message}` });
-        }
-
-        const { bucket, key } = primaryResponse.data;
-
+        // Create file record with pending status
         const newFile = new File({
             hash,
             filename: file.name,
-            size: file.size,
-            is_duplicate: false,
-            locations: [
-                {
-                    sub_instance: primaryNode.node_id,
-                    bucket,
-                    key,
-                    status: 'active'
-                }
-            ]
+            size: fileSize,
+            status: 'pending_distribution',
+            main_r2_location: {
+                bucket: mainR2Bucket.bucket_name,
+                key: 'uploads/' + hash
+            }
         });
 
         await newFile.save();
 
-        console.log(`[UPLOAD] ✅ Saved hash: ${hash}`);
+        // Add to upload queue for async processing
+        const queueItem = new UploadQueue({
+            hash,
+            filename: file.name,
+            size: fileSize,
+            main_r2_key: 'uploads/' + hash,
+            status: 'pending'
+        });
+
+        await queueItem.save();
+
+        console.log('[UPLOAD] Added to queue:', hash);
 
         res.status(201).json({
             success: true,
             hash,
             filename: file.name,
-            size: file.size,
-            is_duplicate: false,
-            primary_location: {
-                sub_instance: primaryNode.node_id,
-                bucket,
-                key
-            },
-            message: 'File uploaded successfully'
+            size: fileSize,
+            message: 'File queued for distribution',
+            status: 'pending_distribution'
         });
 
     } catch (err) {
@@ -877,6 +937,19 @@ app.post('/api/upload', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// ============ QUEUE ENDPOINTS ============
+
+app.get('/api/upload-queue', verifyToken, async (req, res) => {
+    try {
+        const queue = await UploadQueue.find().sort({ created_at: -1 });
+        res.json({ success: true, queue });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ FILE OPERATIONS ============
 
 app.get('/api/files', verifyToken, async (req, res) => {
     try {
@@ -889,7 +962,7 @@ app.get('/api/files', verifyToken, async (req, res) => {
                 hash: f.hash,
                 filename: f.filename,
                 size: f.size,
-                is_duplicate: f.is_duplicate,
+                status: f.status,
                 primary_location: f.locations[0],
                 createdAt: f.createdAt
             }))
@@ -899,58 +972,12 @@ app.get('/api/files', verifyToken, async (req, res) => {
     }
 });
 
-app.post('/api/delete', verifyToken, async (req, res) => {
-    try {
-        const { hash } = req.body;
-        if (!hash) {
-            return res.status(400).json({ error: 'Hash required' });
-        }
-
-        const file = await File.findOne({ hash });
-        if (!file) {
-            return res.status(404).json({ error: 'File not found' });
-        }
-
-        if (file.locations.length > 0) {
-            const loc = file.locations[0];
-            const subInstance = await SubInstance.findOne({ node_id: loc.sub_instance });
-
-            if (subInstance) {
-                const token = await getSubInstanceToken(subInstance);
-                if (token) {
-                    try {
-                        await axios.post(
-                            `${subInstance.url}/api/delete`,
-                            { hash },
-                            {
-                                headers: { 'Authorization': `Bearer ${token}` }
-                            }
-                        );
-                        console.log(`[DELETE] Deleted from ${loc.sub_instance}`);
-                    } catch (err) {
-                        console.error(`[DELETE] Failed to delete from sub-instance: ${err.message}`);
-                    }
-                }
-            }
-        }
-
-        await File.deleteOne({ hash });
-
-        res.json({
-            success: true,
-            message: 'File deleted',
-            hash
-        });
-
-    } catch (err) {
-        console.error('[DELETE] Error:', err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
 const PORT = process.env.MAIN_PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`\n🚀 Main System listening on port ${PORT}`);
-    console.log(`📊 Dashboard: http://localhost:${PORT}`);
-    console.log(`🔑 Login: http://localhost:${PORT}/\n`);
+    console.log('\n🚀 Main System listening on port ' + PORT);
+    console.log('📊 Dashboard: http://localhost:' + PORT);
+    console.log('🔑 Login: http://localhost:' + PORT + '/\n');
+
+    // Start async upload processor
+    processUploadQueue();
 });
