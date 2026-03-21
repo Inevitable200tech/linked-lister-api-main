@@ -4,6 +4,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import fileUpload from 'express-fileupload';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { MainR2, SubInstance, File, UploadQueue } from './utils/schema.js';
 import dotenv from 'dotenv';
 import { LOGIN_HTML, DASHBOARD_HTML } from './utils/utils.js';
@@ -23,6 +24,151 @@ const SUB_ADMIN_KEY = process.env.SUB_ADMIN_KEY || 'admin-secret-key';
 console.log(`⚙️  Main System Configuration:`);
 console.log(`   JWT_SECRET: ${JWT_SECRET.substring(0, 20)}...`);
 console.log(`   SUB_ADMIN_KEY: ${SUB_ADMIN_KEY}\n`);
+
+// ============ R2 CLIENT ============
+
+let r2Client = null;
+let r2Config = null;
+
+async function initializeR2Client() {
+    try {
+        const bucket = await MainR2.findOne({ status: 'active' });
+        if (!bucket) {
+            console.log('[R2] ⚠️  No active R2 bucket configured yet');
+            return null;
+        }
+
+        r2Config = bucket;
+        r2Client = new S3Client({
+            region: 'auto',
+            endpoint: bucket.endpoint,
+            credentials: {
+                accessKeyId: bucket.access_key_id,
+                secretAccessKey: bucket.secret_access_key
+            }
+        });
+
+        console.log('[R2] ✅ R2 client initialized');
+        console.log('[R2]    Bucket: ' + bucket.bucket_name);
+        console.log('[R2]    Endpoint: ' + bucket.endpoint + '\n');
+
+        return r2Client;
+    } catch (err) {
+        console.error('[R2] ❌ Failed to initialize R2 client:', err.message);
+        return null;
+    }
+}
+
+// Initialize on startup
+initializeR2Client();
+
+// ============ R2 OPERATIONS ============
+
+async function uploadToMainR2(fileName, fileBuffer, hash) {
+    try {
+        if (!r2Client || !r2Config) {
+            await initializeR2Client();
+        }
+
+        if (!r2Client) {
+            throw new Error('R2 client not initialized');
+        }
+
+        const key = `uploads/${hash}`;
+
+        console.log(`[R2-UPLOAD] 📤 Uploading to Main R2`);
+        console.log(`[R2-UPLOAD]    Bucket: ${r2Config.bucket_name}`);
+        console.log(`[R2-UPLOAD]    Key: ${key}`);
+        console.log(`[R2-UPLOAD]    Size: ${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+
+        const command = new PutObjectCommand({
+            Bucket: r2Config.bucket_name,
+            Key: key,
+            Body: fileBuffer,
+            ContentType: 'application/octet-stream'
+        });
+
+        await r2Client.send(command);
+
+        console.log(`[R2-UPLOAD] ✅ Uploaded successfully to Main R2`);
+        console.log(`[R2-UPLOAD]    Path: ${r2Config.bucket_name}/${key}\n`);
+
+        return {
+            bucket: r2Config.bucket_name,
+            key: key,
+            success: true
+        };
+    } catch (err) {
+        console.error(`[R2-UPLOAD] ❌ Upload failed: ${err.message}`);
+        throw err;
+    }
+}
+
+async function fetchFromMainR2(hash) {
+    try {
+        if (!r2Client || !r2Config) {
+            await initializeR2Client();
+        }
+
+        if (!r2Client) {
+            throw new Error('R2 client not initialized');
+        }
+
+        const key = `uploads/${hash}`;
+
+        console.log(`[R2-FETCH] 📥 Fetching from Main R2`);
+        console.log(`[R2-FETCH]    Bucket: ${r2Config.bucket_name}`);
+        console.log(`[R2-FETCH]    Key: ${key}`);
+
+        const command = new GetObjectCommand({
+            Bucket: r2Config.bucket_name,
+            Key: key
+        });
+
+        const response = await r2Client.send(command);
+        const fileBuffer = await response.Body.transformToByteArray();
+
+        console.log(`[R2-FETCH] ✅ Fetched successfully`);
+        console.log(`[R2-FETCH]    Size: ${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB\n`);
+
+        return Buffer.from(fileBuffer);
+    } catch (err) {
+        console.error(`[R2-FETCH] ❌ Fetch failed: ${err.message}`);
+        throw err;
+    }
+}
+
+async function deleteFromMainR2(hash) {
+    try {
+        if (!r2Client || !r2Config) {
+            await initializeR2Client();
+        }
+
+        if (!r2Client) {
+            throw new Error('R2 client not initialized');
+        }
+
+        const key = `uploads/${hash}`;
+
+        console.log(`[R2-DELETE] 🗑️  Deleting from Main R2`);
+        console.log(`[R2-DELETE]    Bucket: ${r2Config.bucket_name}`);
+        console.log(`[R2-DELETE]    Key: ${key}`);
+
+        const command = new DeleteObjectCommand({
+            Bucket: r2Config.bucket_name,
+            Key: key
+        });
+
+        await r2Client.send(command);
+
+        console.log(`[R2-DELETE] ✅ Deleted successfully from Main R2\n`);
+
+        return true;
+    } catch (err) {
+        console.error(`[R2-DELETE] ❌ Delete failed: ${err.message}`);
+        throw err;
+    }
+}
 
 // ============ AUTH MIDDLEWARE ============
 
@@ -53,16 +199,11 @@ async function getSubInstanceSpace(subInstance) {
         const url = `${subInstance.url}/api/status`;
         console.log(`[SPACE-CHECK] 🔍 Checking ${subInstance.node_id}`);
         console.log(`[SPACE-CHECK]    URL: ${url}`);
-        console.log(`[SPACE-CHECK]    Timeout: 5000ms`);
         
         const response = await axios.get(url, { timeout: 5000 });
         
         console.log(`[SPACE-CHECK] ✅ ${subInstance.node_id} responded`);
-        console.log(`[SPACE-CHECK]    Status Code: ${response.status}`);
         console.log(`[SPACE-CHECK]    Free Space: ${(response.data.stats.total_free_space / 1024 / 1024 / 1024).toFixed(2)} GB`);
-        console.log(`[SPACE-CHECK]    Total Space: ${(response.data.stats.total_max_storage / 1024 / 1024 / 1024).toFixed(2)} GB`);
-        console.log(`[SPACE-CHECK]    Files: ${response.data.stats.total_files}`);
-        console.log(`[SPACE-CHECK]    Buckets: ${response.data.stats.total_buckets}`);
 
         const updateResult = await SubInstance.updateOne(
             { node_id: subInstance.node_id },
@@ -80,23 +221,13 @@ async function getSubInstanceSpace(subInstance) {
 
         return response.data.stats;
     } catch (err) {
-        console.error(`[SPACE-CHECK] ❌ ${subInstance.node_id} unreachable`);
-        console.error(`[SPACE-CHECK]    Error Type: ${err.code || err.name}`);
-        console.error(`[SPACE-CHECK]    Error Message: ${err.message}`);
-        if (err.response) {
-            console.error(`[SPACE-CHECK]    Status Code: ${err.response.status}`);
-            console.error(`[SPACE-CHECK]    Response: ${JSON.stringify(err.response.data)}`);
-        } else if (err.request) {
-            console.error(`[SPACE-CHECK]    No response received`);
-            console.error(`[SPACE-CHECK]    URL was: ${err.config?.url}`);
-        }
+        console.error(`[SPACE-CHECK] ❌ ${subInstance.node_id} unreachable: ${err.message}`);
         
-        const updateResult = await SubInstance.updateOne(
+        await SubInstance.updateOne(
             { node_id: subInstance.node_id },
             { status: 'inactive' }
         );
         
-        console.error(`[SPACE-CHECK] 💾 Marked as inactive: ${updateResult.modifiedCount} document(s) modified`);
         return null;
     }
 }
@@ -142,7 +273,6 @@ async function uploadFileToSubInstance(subInstance, fileData, fileName, fileHash
         console.log(`[UPLOAD-NODE] 📤 Uploading to ${subInstance.node_id}`);
         console.log(`[UPLOAD-NODE]    URL: ${url}`);
         console.log(`[UPLOAD-NODE]    Filename: ${fileName}`);
-        console.log(`[UPLOAD-NODE]    Hash: ${fileHash}`);
         console.log(`[UPLOAD-NODE]    Size: ${(fileData.length / 1024 / 1024).toFixed(2)} MB`);
 
         const FormData = (await import('form-data')).default;
@@ -160,34 +290,21 @@ async function uploadFileToSubInstance(subInstance, fileData, fileName, fileHash
         });
 
         console.log(`[UPLOAD-NODE] ✅ Upload successful to ${subInstance.node_id}`);
-        console.log(`[UPLOAD-NODE]    Node ID: ${response.data.node_id}`);
         console.log(`[UPLOAD-NODE]    Bucket: ${response.data.bucket}`);
         console.log(`[UPLOAD-NODE]    Key: ${response.data.key}`);
-        console.log(`[UPLOAD-NODE]    Success: ${response.data.success}`);
 
         return response.data;
     } catch (err) {
-        console.error(`[UPLOAD-NODE] ❌ Upload failed to ${subInstance.node_id}`);
-        console.error(`[UPLOAD-NODE]    Error Type: ${err.code || err.name}`);
-        console.error(`[UPLOAD-NODE]    Error Message: ${err.message}`);
-        if (err.response) {
-            console.error(`[UPLOAD-NODE]    Status Code: ${err.response.status}`);
-            console.error(`[UPLOAD-NODE]    Response: ${JSON.stringify(err.response.data)}`);
-        } else if (err.request) {
-            console.error(`[UPLOAD-NODE]    No response received`);
-            console.error(`[UPLOAD-NODE]    URL was: ${err.config?.url}`);
-        }
+        console.error(`[UPLOAD-NODE] ❌ Upload failed to ${subInstance.node_id}: ${err.message}`);
         return null;
     }
 }
 
 // ============ HEARTBEAT MONITOR ============
-// FIXED: Now checks ALL instances (active AND inactive)
-// This allows inactive nodes to recover automatically when they come back online
+
 async function monitorSubInstanceHealth() {
     console.log('[HEARTBEAT] Starting sub-instance health monitor...');
-    console.log('[HEARTBEAT] Will check ALL instances every 10 seconds (active & inactive)\n');
-    console.log('[HEARTBEAT] 💡 Inactive nodes can now recover automatically!\n');
+    console.log('[HEARTBEAT] Checking ALL instances every 10 seconds\n');
 
     setInterval(async () => {
         try {
@@ -199,54 +316,35 @@ async function monitorSubInstanceHealth() {
             const allInstances = await SubInstance.find();
             const activeInstances = await SubInstance.find({ status: 'active' });
             
-            console.log(`[HEARTBEAT] 📊 Total instances in DB: ${allInstances.length}`);
-            console.log(`[HEARTBEAT]    Active: ${activeInstances.length}`);
-            console.log(`[HEARTBEAT]    Inactive: ${allInstances.length - activeInstances.length}`);
+            console.log(`[HEARTBEAT] 📊 Total: ${allInstances.length} | Active: ${activeInstances.length}`);
             
             if (allInstances.length === 0) {
                 console.log(`[HEARTBEAT] ⚠️  No instances registered yet`);
-                console.log(`[HEARTBEAT] Add instances via: POST /api/dashboard/sub-instances`);
+                console.log(`[HEARTBEAT] ═══════════════════════════════════════\n`);
                 return;
             }
             
-            console.log(`[HEARTBEAT]\n📡 Checking instances...`);
-            
             let successCount = 0;
-            let failureCount = 0;
             
-            // FIX: Check ALL instances, not just active ones
             for (const instance of allInstances) {
-                console.log(`[HEARTBEAT]`);
-                console.log(`[HEARTBEAT] Instance: ${instance.node_id}`);
-                console.log(`[HEARTBEAT]   URL: ${instance.url}`);
-                console.log(`[HEARTBEAT]   Current Status: ${instance.status}`);
-                
                 const data = await getSubInstanceSpace(instance);
-                
                 if (data) {
                     successCount++;
-                    console.log(`[HEARTBEAT] ✅ SUCCESS: ${instance.node_id}`);
-                    console.log(`[HEARTBEAT]    Free: ${(data.total_free_space / 1024 / 1024 / 1024).toFixed(2)} GB`);
-                    console.log(`[HEARTBEAT]    Total: ${(data.total_max_storage / 1024 / 1024 / 1024).toFixed(2)} GB`);
-                } else {
-                    failureCount++;
-                    console.log(`[HEARTBEAT] ❌ FAILURE: ${instance.node_id}`);
-                    console.log(`[HEARTBEAT]    Could not reach ${instance.url}`);
                 }
             }
             
-            console.log(`[HEARTBEAT]\n📈 Summary: ${successCount} healthy, ${failureCount} unreachable`);
+            console.log(`[HEARTBEAT] 📈 Result: ${successCount} healthy, ${allInstances.length - successCount} unreachable`);
             console.log(`[HEARTBEAT] ═══════════════════════════════════════\n`);
             
         } catch (err) {
-            console.error('[HEARTBEAT] ❌ Fatal Error:', err.message);
-            console.error('[HEARTBEAT] Stack:', err.stack);
+            console.error('[HEARTBEAT] ❌ Error:', err.message);
         }
     }, 10000);
 }
 
 async function processUploadQueue() {
     console.log('[QUEUE] Starting upload queue processor...');
+    console.log('[QUEUE] Distributing files from Main R2 to sub-instances\n');
 
     setInterval(async () => {
         try {
@@ -254,7 +352,9 @@ async function processUploadQueue() {
 
             if (!pending) return;
 
+            console.log(`\n[QUEUE] ═══════════════════════════════════════`);
             console.log(`[QUEUE] Processing: ${pending.hash}`);
+            console.log(`[QUEUE] ═══════════════════════════════════════`);
 
             await UploadQueue.updateOne(
                 { _id: pending._id },
@@ -264,11 +364,7 @@ async function processUploadQueue() {
             const suitableNodes = await getSuitableNodes(pending.size);
 
             if (suitableNodes.length === 0) {
-                console.log(`[QUEUE] ❌ No suitable nodes for ${pending.hash} - keeping in main R2`);
-                await File.updateOne(
-                    { hash: pending.hash },
-                    { status: 'pending_distribution' }
-                );
+                console.log(`[QUEUE] ❌ No suitable nodes - file stays in Main R2`);
                 await UploadQueue.updateOne(
                     { _id: pending._id },
                     {
@@ -277,6 +373,7 @@ async function processUploadQueue() {
                         updated_at: new Date()
                     }
                 );
+                console.log(`[QUEUE] ═══════════════════════════════════════\n`);
                 return;
             }
 
@@ -285,20 +382,13 @@ async function processUploadQueue() {
                 try {
                     const subInstance = nodeInfo.instance;
                     
-                    // Get the file from main R2 (in memory for now)
-                    const fileDoc = await File.findOne({ hash: pending.hash });
-                    if (!fileDoc) {
-                        console.error(`[QUEUE] ❌ File document not found: ${pending.hash}`);
-                        continue;
-                    }
-
-                    // Create a buffer with the file data (simulated for now)
-                    // In real implementation, this would be fetched from R2
-                    const fileBuffer = Buffer.alloc(pending.size);
+                    console.log(`[QUEUE]\n[QUEUE] Attempting upload to: ${subInstance.node_id}`);
                     
-                    console.log(`[QUEUE] 📤 Uploading ${pending.hash} to ${subInstance.node_id}`);
+                    // Fetch file from Main R2
+                    console.log(`[QUEUE] 📥 Fetching file from Main R2...`);
+                    const fileBuffer = await fetchFromMainR2(pending.hash);
                     
-                    // Direct upload to sub-instance (no token needed!)
+                    // Upload to sub-instance
                     const uploadResult = await uploadFileToSubInstance(
                         subInstance,
                         fileBuffer,
@@ -307,12 +397,13 @@ async function processUploadQueue() {
                     );
 
                     if (!uploadResult) {
-                        console.log(`[QUEUE] ⚠️  Upload failed to ${subInstance.node_id}, trying next node...`);
+                        console.log(`[QUEUE] ⚠️  Upload failed, trying next node...\n`);
                         continue;
                     }
 
-                    console.log(`[QUEUE] ✅ Uploaded ${pending.hash} to ${subInstance.node_id}`);
+                    console.log(`[QUEUE] ✅ Upload succeeded to ${subInstance.node_id}`);
 
+                    // Update file metadata with new location
                     await File.updateOne(
                         { hash: pending.hash },
                         {
@@ -321,17 +412,25 @@ async function processUploadQueue() {
                                 sub_instance: subInstance.node_id,
                                 bucket: uploadResult.bucket,
                                 key: uploadResult.key,
-                                status: 'active'
+                                status: 'active',
+                                moved_at: new Date()
                             }],
                             main_r2_location: null
                         }
                     );
 
+                    console.log(`[QUEUE] 📊 Metadata updated: distributed to ${subInstance.node_id}`);
+
+                    // Delete from Main R2
+                    await deleteFromMainR2(pending.hash);
+
+                    console.log(`[QUEUE] 🎉 File successfully moved from Main R2 to ${subInstance.node_id}`);
+
                     uploadedSuccessfully = true;
                     break;
 
                 } catch (err) {
-                    console.error(`[QUEUE] Error uploading to ${nodeInfo.nodeId}: ${err.message}`);
+                    console.error(`[QUEUE] ❌ Error: ${err.message}`);
                     continue;
                 }
             }
@@ -351,7 +450,10 @@ async function processUploadQueue() {
                         updated_at: new Date()
                     }
                 );
+                console.log(`[QUEUE] ❌ All nodes failed for: ${pending.hash}`);
             }
+
+            console.log(`[QUEUE] ═══════════════════════════════════════\n`);
 
         } catch (err) {
             console.error('[QUEUE] Error:', err.message);
@@ -417,6 +519,10 @@ app.post('/api/main-r2', verifyToken, async (req, res) => {
         });
 
         await newBucket.save();
+
+        // Reinitialize R2 client with new credentials
+        await initializeR2Client();
+
         res.status(201).json({ success: true, bucket: newBucket });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -438,45 +544,34 @@ app.post('/api/dashboard/sub-instances', verifyToken, async (req, res) => {
     try {
         const { node_id, url } = req.body;
         
-        console.log(`[REGISTER] 📝 Registering new sub-instance`);
-        console.log(`[REGISTER]    Node ID: ${node_id}`);
-        console.log(`[REGISTER]    URL: ${url}`);
+        console.log(`[REGISTER] 📝 Registering new sub-instance: ${node_id}`);
         
         if (!node_id || !url) {
-            console.log(`[REGISTER] ❌ Missing fields`);
             return res.status(400).json({ error: 'node_id and url required' });
         }
 
-        console.log(`[REGISTER] 🔍 Testing connection to ${url}/health`);
+        console.log(`[REGISTER] 🔍 Testing connection...`);
         try {
-            const healthCheck = await axios.get(url + '/health', { timeout: 5000 });
+            await axios.get(url + '/health', { timeout: 5000 });
             console.log(`[REGISTER] ✅ Health check passed`);
-            console.log(`[REGISTER]    Status Code: ${healthCheck.status}`);
-            console.log(`[REGISTER]    Response: ${JSON.stringify(healthCheck.data)}`);
         } catch (err) {
             console.log(`[REGISTER] ❌ Health check failed`);
-            console.log(`[REGISTER]    Error: ${err.message}`);
-            console.log(`[REGISTER]    Make sure sub-instance is running on ${url}`);
             return res.status(503).json({ error: 'Cannot connect to ' + url });
         }
 
         const existing = await SubInstance.findOne({ node_id });
         if (existing) {
-            console.log(`[REGISTER] ⚠️  Instance already exists with node_id: ${node_id}`);
             return res.status(409).json({ error: 'Sub-instance already exists' });
         }
 
         const newInstance = new SubInstance({ node_id, url, status: 'active' });
-        const saved = await newInstance.save();
+        await newInstance.save();
         
-        console.log(`[REGISTER] ✅ Sub-instance registered successfully`);
-        console.log(`[REGISTER]    ID: ${saved._id}`);
-        console.log(`[REGISTER]    Status: ${saved.status}`);
-        console.log(`[REGISTER] 💡 First heartbeat will check space in ~10 seconds`);
+        console.log(`[REGISTER] ✅ Sub-instance registered\n`);
 
         res.status(201).json({ success: true, instance: newInstance });
     } catch (err) {
-        console.error(`[REGISTER] ❌ Error registering instance: ${err.message}`);
+        console.error(`[REGISTER] ❌ Error: ${err.message}`);
         res.status(500).json({ error: err.message });
     }
 });
@@ -493,9 +588,9 @@ app.delete('/api/dashboard/sub-instances/:node_id', verifyToken, async (req, res
 app.get('/api/dashboard/status', verifyToken, async (req, res) => {
     try {
         const instances = await SubInstance.find();
-        const totalFiles = await File.countDocuments({ status: { $ne: 'duplicate' } });
+        const totalFiles = await File.countDocuments({ status: { $ne: 'deleted' } });
         const totalSize = await File.aggregate([
-            { $match: { status: { $ne: 'duplicate' } } },
+            { $match: { status: { $ne: 'deleted' } } },
             { $group: { _id: null, total: { $sum: '$size' } } }
         ]);
 
@@ -511,7 +606,6 @@ app.get('/api/dashboard/status', verifyToken, async (req, res) => {
                 free_space: i.free_space,
                 total_space: i.total_space,
                 file_count: i.file_count,
-                r2_buckets: i.r2_buckets,
                 last_heartbeat: i.last_heartbeat
             }))
         };
@@ -534,11 +628,16 @@ app.post('/api/upload', async (req, res) => {
         const hash = hashFile(file.data);
         const fileSize = file.size;
 
-        console.log('[UPLOAD] Received:', hash, 'Size:', fileSize, 'Name:', file.name);
+        console.log('\n[UPLOAD] ═══════════════════════════════════════');
+        console.log('[UPLOAD] 📤 File received');
+        console.log('[UPLOAD]    Hash: ' + hash);
+        console.log('[UPLOAD]    Size: ' + (fileSize / 1024 / 1024).toFixed(2) + ' MB');
+        console.log('[UPLOAD]    Name: ' + file.name);
 
         const existingFile = await File.findOne({ hash });
         if (existingFile) {
-            console.log('[UPLOAD] Duplicate detected:', hash);
+            console.log('[UPLOAD] ⚠️  Duplicate detected');
+            console.log('[UPLOAD] ═══════════════════════════════════════\n');
             return res.status(201).json({
                 success: true,
                 is_duplicate: true,
@@ -552,35 +651,42 @@ app.post('/api/upload', async (req, res) => {
 
         const mainR2Bucket = await MainR2.findOne({ status: 'active' });
         if (!mainR2Bucket) {
+            console.log('[UPLOAD] ❌ No R2 bucket configured');
+            console.log('[UPLOAD] ═══════════════════════════════════════\n');
             return res.status(503).json({ error: 'Main R2 bucket not configured' });
         }
 
-        console.log('[UPLOAD] Storing in Main R2 bucket:', mainR2Bucket.bucket_name);
+        // Upload to Main R2
+        const r2Result = await uploadToMainR2(file.name, file.data, hash);
 
+        // Save metadata only to MongoDB (NO file data!)
+        console.log('[UPLOAD] 💾 Saving metadata to MongoDB (no file data)');
         const newFile = new File({
             hash,
             filename: file.name,
             size: fileSize,
             status: 'pending_distribution',
             main_r2_location: {
-                bucket: mainR2Bucket.bucket_name,
-                key: 'uploads/' + hash
+                bucket: r2Result.bucket,
+                key: r2Result.key,
+                stored_at: new Date()
             }
         });
 
         await newFile.save();
+        console.log('[UPLOAD] ✅ Metadata saved to MongoDB');
 
         const queueItem = new UploadQueue({
             hash,
             filename: file.name,
             size: fileSize,
-            main_r2_key: 'uploads/' + hash,
+            main_r2_key: r2Result.key,
             status: 'pending'
         });
 
         await queueItem.save();
-
-        console.log('[UPLOAD] Added to queue:', hash);
+        console.log('[UPLOAD] 📋 Added to queue');
+        console.log('[UPLOAD] ═══════════════════════════════════════\n');
 
         res.status(201).json({
             success: true,
@@ -592,7 +698,8 @@ app.post('/api/upload', async (req, res) => {
         });
 
     } catch (err) {
-        console.error('[UPLOAD] Error:', err);
+        console.error('[UPLOAD] ❌ Error: ' + err.message);
+        console.log('[UPLOAD] ═══════════════════════════════════════\n');
         res.status(500).json({ error: err.message });
     }
 });
@@ -622,7 +729,7 @@ app.get('/api/files', verifyToken, async (req, res) => {
                 filename: f.filename,
                 size: f.size,
                 status: f.status,
-                primary_location: f.locations[0],
+                primary_location: f.locations[0] || { sub_instance: 'Main R2' },
                 createdAt: f.createdAt
             }))
         });

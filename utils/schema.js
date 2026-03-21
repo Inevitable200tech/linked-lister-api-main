@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 
-
 // ============ SCHEMAS ============
 
 const mainR2Schema = new mongoose.Schema({
@@ -25,23 +24,32 @@ const subInstanceSchema = new mongoose.Schema({
     created_at: { type: Date, default: Date.now }
 });
 
+// ============ UPDATED FILE SCHEMA ============
+// IMPORTANT: NO fileData in MongoDB!
+// Files are stored in R2, only metadata (paths) are in MongoDB
 const fileSchema = new mongoose.Schema({
     hash: { type: String, required: true, unique: true, index: true },
     filename: String,
     size: Number,
-    status: { type: String, enum: ['distributed', 'pending_distribution', 'duplicate'], default: 'distributed' },
-    locations: [{
-        sub_instance: String,
-        bucket: String,
-        key: String,
-        status: String
-    }],
+    // NOTE: fileData REMOVED! File stored in R2, not MongoDB
+    status: { type: String, enum: ['pending_distribution', 'distributed', 'deleted'], default: 'pending_distribution' },
+    
+    // Temporary location: where file is in Main R2 bucket
     main_r2_location: {
-        bucket: String,
-        key: String
+        bucket: String,           // ← R2 bucket name (e.g., "test-bucket")
+        key: String,              // ← Object path (e.g., "uploads/a1b2c3d4...")
+        stored_at: Date           // ← When file was uploaded to Main R2
     },
-    is_duplicate: Boolean,
-    original_hash: String,
+    
+    // Final location: where file ends up after distribution to nodes
+    locations: [{
+        sub_instance: String,     // ← Node ID (e.g., "node-1")
+        bucket: String,           // ← Sub-instance bucket (e.g., "my-bucket")
+        key: String,              // ← Object path on node (e.g., "node-1/a1b2c3d4...")
+        status: String,           // ← "active" or "inactive"
+        moved_at: Date            // ← When file was moved to this node
+    }],
+    
     createdAt: { type: Date, default: Date.now }
 });
 
