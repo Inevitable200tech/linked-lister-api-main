@@ -24,10 +24,6 @@ console.log(`⚙️  Main System Configuration:`);
 console.log(`   JWT_SECRET: ${JWT_SECRET.substring(0, 20)}...`);
 console.log(`   SUB_ADMIN_KEY: ${SUB_ADMIN_KEY}\n`);
 
-
-
-
-
 // ============ AUTH MIDDLEWARE ============
 
 function verifyToken(req, res, next) {
@@ -54,9 +50,21 @@ async function getActiveSubInstances() {
 
 async function getSubInstanceSpace(subInstance) {
     try {
-        const response = await axios.get(`${subInstance.url}/api/status`, { timeout: 5000 });
+        const url = `${subInstance.url}/api/status`;
+        console.log(`[SPACE-CHECK] 🔍 Checking ${subInstance.node_id}`);
+        console.log(`[SPACE-CHECK]    URL: ${url}`);
+        console.log(`[SPACE-CHECK]    Timeout: 5000ms`);
+        
+        const response = await axios.get(url, { timeout: 5000 });
+        
+        console.log(`[SPACE-CHECK] ✅ ${subInstance.node_id} responded`);
+        console.log(`[SPACE-CHECK]    Status Code: ${response.status}`);
+        console.log(`[SPACE-CHECK]    Free Space: ${(response.data.stats.total_free_space / 1024 / 1024 / 1024).toFixed(2)} GB`);
+        console.log(`[SPACE-CHECK]    Total Space: ${(response.data.stats.total_max_storage / 1024 / 1024 / 1024).toFixed(2)} GB`);
+        console.log(`[SPACE-CHECK]    Files: ${response.data.stats.total_files}`);
+        console.log(`[SPACE-CHECK]    Buckets: ${response.data.stats.total_buckets}`);
 
-        await SubInstance.updateOne(
+        const updateResult = await SubInstance.updateOne(
             { node_id: subInstance.node_id },
             {
                 free_space: response.data.stats.total_free_space,
@@ -68,13 +76,27 @@ async function getSubInstanceSpace(subInstance) {
             }
         );
 
+        console.log(`[SPACE-CHECK] 💾 Database updated: ${updateResult.modifiedCount} document(s) modified`);
+
         return response.data.stats;
     } catch (err) {
-        console.error(`[SPACE] ${subInstance.node_id} unreachable: ${err.message}`);
-        await SubInstance.updateOne(
+        console.error(`[SPACE-CHECK] ❌ ${subInstance.node_id} unreachable`);
+        console.error(`[SPACE-CHECK]    Error Type: ${err.code || err.name}`);
+        console.error(`[SPACE-CHECK]    Error Message: ${err.message}`);
+        if (err.response) {
+            console.error(`[SPACE-CHECK]    Status Code: ${err.response.status}`);
+            console.error(`[SPACE-CHECK]    Response: ${JSON.stringify(err.response.data)}`);
+        } else if (err.request) {
+            console.error(`[SPACE-CHECK]    No response received`);
+            console.error(`[SPACE-CHECK]    URL was: ${err.config?.url}`);
+        }
+        
+        const updateResult = await SubInstance.updateOne(
             { node_id: subInstance.node_id },
             { status: 'inactive' }
         );
+        
+        console.error(`[SPACE-CHECK] 💾 Marked as inactive: ${updateResult.modifiedCount} document(s) modified`);
         return null;
     }
 }
@@ -116,37 +138,91 @@ async function getSuitableNodes(fileSize) {
 
 async function getSubInstanceToken(subInstance) {
     try {
-        const response = await axios.post(`${subInstance.url}/api/auth/login`, {
+        const url = `${subInstance.url}/api/auth/login`;
+        console.log(`[AUTH] 🔐 Getting token from ${subInstance.node_id}`);
+        console.log(`[AUTH]    URL: ${url}`);
+        console.log(`[AUTH]    Admin Key: ${SUB_ADMIN_KEY.substring(0, 10)}...`);
+        
+        const response = await axios.post(url, {
             admin_key: SUB_ADMIN_KEY
         }, { timeout: 5000 });
+        
+        console.log(`[AUTH] ✅ Token received from ${subInstance.node_id}`);
+        console.log(`[AUTH]    Token: ${response.data.token.substring(0, 20)}...`);
+        
         return response.data.token;
     } catch (err) {
-        console.error(`[AUTH] Failed to get token from ${subInstance.node_id}: ${err.message}`);
+        console.error(`[AUTH] ❌ Failed to get token from ${subInstance.node_id}`);
+        console.error(`[AUTH]    Error: ${err.message}`);
+        if (err.response) {
+            console.error(`[AUTH]    Status: ${err.response.status}`);
+            console.error(`[AUTH]    Response: ${JSON.stringify(err.response.data)}`);
+        }
+        if (err.request && !err.response) {
+            console.error(`[AUTH]    No response - check if node is running`);
+        }
         return null;
     }
 }
 
 // ============ HEARTBEAT MONITOR ============
-// Fetches space data from all sub-instances independently (every 10s)
 async function monitorSubInstanceHealth() {
     console.log('[HEARTBEAT] Starting sub-instance health monitor...');
+    console.log('[HEARTBEAT] Will check active instances every 10 seconds\n');
 
     setInterval(async () => {
         try {
-            const instances = await SubInstance.find({ status: 'active' });
+            const timestamp = new Date().toLocaleTimeString();
+            console.log(`\n[HEARTBEAT] ═══════════════════════════════════════`);
+            console.log(`[HEARTBEAT] Health Check at ${timestamp}`);
+            console.log(`[HEARTBEAT] ═══════════════════════════════════════`);
             
-            for (const instance of instances) {
+            const allInstances = await SubInstance.find();
+            const activeInstances = await SubInstance.find({ status: 'active' });
+            
+            console.log(`[HEARTBEAT] 📊 Total instances in DB: ${allInstances.length}`);
+            console.log(`[HEARTBEAT]    Active: ${activeInstances.length}`);
+            console.log(`[HEARTBEAT]    Inactive: ${allInstances.length - activeInstances.length}`);
+            
+            if (allInstances.length === 0) {
+                console.log(`[HEARTBEAT] ⚠️  No instances registered yet`);
+                console.log(`[HEARTBEAT] Add instances via: POST /api/dashboard/sub-instances`);
+                return;
+            }
+            
+            console.log(`[HEARTBEAT]\n📡 Checking instances...`);
+            
+            let successCount = 0;
+            let failureCount = 0;
+            
+            for (const instance of activeInstances) {
+                console.log(`[HEARTBEAT]`);
+                console.log(`[HEARTBEAT] Instance: ${instance.node_id}`);
+                console.log(`[HEARTBEAT]   URL: ${instance.url}`);
+                console.log(`[HEARTBEAT]   Current Status: ${instance.status}`);
+                
                 const data = await getSubInstanceSpace(instance);
+                
                 if (data) {
-                    console.log(`[HEARTBEAT] ✅ ${instance.node_id}: ${(data.total_free_space / 1024 / 1024 / 1024).toFixed(2)} GB free`);
+                    successCount++;
+                    console.log(`[HEARTBEAT] ✅ SUCCESS: ${instance.node_id}`);
+                    console.log(`[HEARTBEAT]    Free: ${(data.total_free_space / 1024 / 1024 / 1024).toFixed(2)} GB`);
+                    console.log(`[HEARTBEAT]    Total: ${(data.total_max_storage / 1024 / 1024 / 1024).toFixed(2)} GB`);
                 } else {
-                    console.log(`[HEARTBEAT] ⚠️  ${instance.node_id}: Unreachable`);
+                    failureCount++;
+                    console.log(`[HEARTBEAT] ❌ FAILURE: ${instance.node_id}`);
+                    console.log(`[HEARTBEAT]    Could not reach ${instance.url}`);
                 }
             }
+            
+            console.log(`[HEARTBEAT]\n📈 Summary: ${successCount} healthy, ${failureCount} unreachable`);
+            console.log(`[HEARTBEAT] ═══════════════════════════════════════\n`);
+            
         } catch (err) {
-            console.error('[HEARTBEAT] Error:', err.message);
+            console.error('[HEARTBEAT] ❌ Fatal Error:', err.message);
+            console.error('[HEARTBEAT] Stack:', err.stack);
         }
-    }, 10000); // Every 10 seconds
+    }, 10000);
 }
 
 async function processUploadQueue() {
@@ -243,7 +319,6 @@ async function processUploadQueue() {
     }, 5000);
 }
 
-
 // ============ ROUTES ============
 
 app.get('/', (req, res) => {
@@ -322,22 +397,46 @@ app.get('/api/dashboard/sub-instances', verifyToken, async (req, res) => {
 app.post('/api/dashboard/sub-instances', verifyToken, async (req, res) => {
     try {
         const { node_id, url } = req.body;
-        if (!node_id || !url) return res.status(400).json({ error: 'node_id and url required' });
+        
+        console.log(`[REGISTER] 📝 Registering new sub-instance`);
+        console.log(`[REGISTER]    Node ID: ${node_id}`);
+        console.log(`[REGISTER]    URL: ${url}`);
+        
+        if (!node_id || !url) {
+            console.log(`[REGISTER] ❌ Missing fields`);
+            return res.status(400).json({ error: 'node_id and url required' });
+        }
 
+        console.log(`[REGISTER] 🔍 Testing connection to ${url}/health`);
         try {
-            await axios.get(url + '/health', { timeout: 5000 });
+            const healthCheck = await axios.get(url + '/health', { timeout: 5000 });
+            console.log(`[REGISTER] ✅ Health check passed`);
+            console.log(`[REGISTER]    Status Code: ${healthCheck.status}`);
+            console.log(`[REGISTER]    Response: ${JSON.stringify(healthCheck.data)}`);
         } catch (err) {
+            console.log(`[REGISTER] ❌ Health check failed`);
+            console.log(`[REGISTER]    Error: ${err.message}`);
+            console.log(`[REGISTER]    Make sure sub-instance is running on ${url}`);
             return res.status(503).json({ error: 'Cannot connect to ' + url });
         }
 
         const existing = await SubInstance.findOne({ node_id });
-        if (existing) return res.status(409).json({ error: 'Sub-instance already exists' });
+        if (existing) {
+            console.log(`[REGISTER] ⚠️  Instance already exists with node_id: ${node_id}`);
+            return res.status(409).json({ error: 'Sub-instance already exists' });
+        }
 
         const newInstance = new SubInstance({ node_id, url, status: 'active' });
-        await newInstance.save();
+        const saved = await newInstance.save();
+        
+        console.log(`[REGISTER] ✅ Sub-instance registered successfully`);
+        console.log(`[REGISTER]    ID: ${saved._id}`);
+        console.log(`[REGISTER]    Status: ${saved.status}`);
+        console.log(`[REGISTER] 💡 First heartbeat will check space in ~10 seconds`);
 
         res.status(201).json({ success: true, instance: newInstance });
     } catch (err) {
+        console.error(`[REGISTER] ❌ Error registering instance: ${err.message}`);
         res.status(500).json({ error: err.message });
     }
 });
