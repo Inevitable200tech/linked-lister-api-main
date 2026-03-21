@@ -166,9 +166,12 @@ async function getSubInstanceToken(subInstance) {
 }
 
 // ============ HEARTBEAT MONITOR ============
+// FIXED: Now checks ALL instances (active AND inactive)
+// This allows inactive nodes to recover automatically when they come back online
 async function monitorSubInstanceHealth() {
     console.log('[HEARTBEAT] Starting sub-instance health monitor...');
-    console.log('[HEARTBEAT] Will check active instances every 10 seconds\n');
+    console.log('[HEARTBEAT] Will check ALL instances every 10 seconds (active & inactive)\n');
+    console.log('[HEARTBEAT] 💡 Inactive nodes can now recover automatically!\n');
 
     setInterval(async () => {
         try {
@@ -195,7 +198,8 @@ async function monitorSubInstanceHealth() {
             let successCount = 0;
             let failureCount = 0;
             
-            for (const instance of activeInstances) {
+            // FIX: Check ALL instances, not just active ones
+            for (const instance of allInstances) {
                 console.log(`[HEARTBEAT]`);
                 console.log(`[HEARTBEAT] Instance: ${instance.node_id}`);
                 console.log(`[HEARTBEAT]   URL: ${instance.url}`);
