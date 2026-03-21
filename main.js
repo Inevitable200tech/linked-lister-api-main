@@ -136,30 +136,46 @@ async function getSuitableNodes(fileSize) {
     return suitable.sort((a, b) => b.free_space - a.free_space);
 }
 
-async function getSubInstanceToken(subInstance) {
+async function uploadFileToSubInstance(subInstance, fileData, fileName, fileHash) {
     try {
-        const url = `${subInstance.url}/api/auth/login`;
-        console.log(`[AUTH] 🔐 Getting token from ${subInstance.node_id}`);
-        console.log(`[AUTH]    URL: ${url}`);
-        console.log(`[AUTH]    Admin Key: ${SUB_ADMIN_KEY.substring(0, 10)}...`);
+        const url = `${subInstance.url}/api/upload`;
+        console.log(`[UPLOAD-NODE] 📤 Uploading to ${subInstance.node_id}`);
+        console.log(`[UPLOAD-NODE]    URL: ${url}`);
+        console.log(`[UPLOAD-NODE]    Filename: ${fileName}`);
+        console.log(`[UPLOAD-NODE]    Hash: ${fileHash}`);
+        console.log(`[UPLOAD-NODE]    Size: ${(fileData.length / 1024 / 1024).toFixed(2)} MB`);
+
+        const FormData = (await import('form-data')).default;
+        const formData = new FormData();
+        formData.append('file', fileData, fileName);
+        formData.append('hash', fileHash);
+
+        console.log(`[UPLOAD-NODE] ⏳ Sending to node...`);
         
-        const response = await axios.post(url, {
-            admin_key: SUB_ADMIN_KEY
-        }, { timeout: 5000 });
-        
-        console.log(`[AUTH] ✅ Token received from ${subInstance.node_id}`);
-        console.log(`[AUTH]    Token: ${response.data.token.substring(0, 20)}...`);
-        
-        return response.data.token;
+        const response = await axios.post(url, formData, {
+            headers: formData.getHeaders(),
+            timeout: 30000,
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity
+        });
+
+        console.log(`[UPLOAD-NODE] ✅ Upload successful to ${subInstance.node_id}`);
+        console.log(`[UPLOAD-NODE]    Node ID: ${response.data.node_id}`);
+        console.log(`[UPLOAD-NODE]    Bucket: ${response.data.bucket}`);
+        console.log(`[UPLOAD-NODE]    Key: ${response.data.key}`);
+        console.log(`[UPLOAD-NODE]    Success: ${response.data.success}`);
+
+        return response.data;
     } catch (err) {
-        console.error(`[AUTH] ❌ Failed to get token from ${subInstance.node_id}`);
-        console.error(`[AUTH]    Error: ${err.message}`);
+        console.error(`[UPLOAD-NODE] ❌ Upload failed to ${subInstance.node_id}`);
+        console.error(`[UPLOAD-NODE]    Error Type: ${err.code || err.name}`);
+        console.error(`[UPLOAD-NODE]    Error Message: ${err.message}`);
         if (err.response) {
-            console.error(`[AUTH]    Status: ${err.response.status}`);
-            console.error(`[AUTH]    Response: ${JSON.stringify(err.response.data)}`);
-        }
-        if (err.request && !err.response) {
-            console.error(`[AUTH]    No response - check if node is running`);
+            console.error(`[UPLOAD-NODE]    Status Code: ${err.response.status}`);
+            console.error(`[UPLOAD-NODE]    Response: ${JSON.stringify(err.response.data)}`);
+        } else if (err.request) {
+            console.error(`[UPLOAD-NODE]    No response received`);
+            console.error(`[UPLOAD-NODE]    URL was: ${err.config?.url}`);
         }
         return null;
     }
@@ -268,10 +284,30 @@ async function processUploadQueue() {
             for (const nodeInfo of suitableNodes) {
                 try {
                     const subInstance = nodeInfo.instance;
-                    const token = await getSubInstanceToken(subInstance);
+                    
+                    // Get the file from main R2 (in memory for now)
+                    const fileDoc = await File.findOne({ hash: pending.hash });
+                    if (!fileDoc) {
+                        console.error(`[QUEUE] ❌ File document not found: ${pending.hash}`);
+                        continue;
+                    }
 
-                    if (!token) {
-                        console.log(`[QUEUE] ⚠️  Could not get token from ${subInstance.node_id}`);
+                    // Create a buffer with the file data (simulated for now)
+                    // In real implementation, this would be fetched from R2
+                    const fileBuffer = Buffer.alloc(pending.size);
+                    
+                    console.log(`[QUEUE] 📤 Uploading ${pending.hash} to ${subInstance.node_id}`);
+                    
+                    // Direct upload to sub-instance (no token needed!)
+                    const uploadResult = await uploadFileToSubInstance(
+                        subInstance,
+                        fileBuffer,
+                        pending.filename,
+                        pending.hash
+                    );
+
+                    if (!uploadResult) {
+                        console.log(`[QUEUE] ⚠️  Upload failed to ${subInstance.node_id}, trying next node...`);
                         continue;
                     }
 
@@ -283,8 +319,8 @@ async function processUploadQueue() {
                             status: 'distributed',
                             locations: [{
                                 sub_instance: subInstance.node_id,
-                                bucket: 'r2-bucket',
-                                key: `${subInstance.node_id}/${pending.hash}`,
+                                bucket: uploadResult.bucket,
+                                key: uploadResult.key,
                                 status: 'active'
                             }],
                             main_r2_location: null
