@@ -62,7 +62,54 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
         .upload-result.error { background: #f8d7da; color: #721c24; }
         .upload-result-hash { font-family: monospace; font-size: 12px; word-break: break-all; }
         
-        @media (max-width: 768px) { .stats-grid { grid-template-columns: 2fr; } .form-row { grid-template-columns: 1fr; } }
+        /* File Grid Styles */
+        .files-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
+        .file-card { background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; transition: all 0.3s; }
+        .file-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-2px); }
+        .file-card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; }
+        .file-card-title { font-weight: 600; word-break: break-word; margin-bottom: 5px; }
+        .file-card-type { font-size: 12px; opacity: 0.9; }
+        .file-card-body { padding: 15px; }
+        .file-card-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; font-size: 13px; }
+        .file-card-info-item { }
+        .file-card-info-label { color: #999; font-size: 11px; text-transform: uppercase; }
+        .file-card-info-value { font-weight: 600; color: #333; font-family: monospace; font-size: 11px; }
+        .file-card-status { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 10px; }
+        .file-card-status.pending { background: #fff3cd; color: #856404; }
+        .file-card-status.distributed { background: #d4edda; color: #155724; }
+        .file-card-location { font-size: 12px; color: #666; margin-bottom: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px; border-left: 3px solid #3498db; }
+        .file-card-location-label { font-size: 10px; color: #999; text-transform: uppercase; }
+        .file-card-location-value { font-weight: 600; margin-top: 3px; }
+        .file-card-actions { display: flex; gap: 8px; }
+        .file-card-action-btn { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #333; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.3s; }
+        .file-card-action-btn:hover { background: #3498db; color: white; border-color: #3498db; }
+        .file-card-action-btn.download { background: #27ae60; color: white; border-color: #27ae60; }
+        .file-card-action-btn.download:hover { background: #229954; border-color: #229954; }
+        .file-card-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        /* Modal Styles */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; border-radius: 8px; width: 90%; max-width: 900px; max-height: 90vh; overflow: auto; position: relative; }
+        .modal-header { background: #34495e; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .modal-title { font-size: 18px; font-weight: 600; word-break: break-word; }
+        .modal-close { background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; }
+        .modal-close:hover { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        .modal-body { padding: 20px; }
+        .video-container { width: 100%; background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 20px; }
+        .video-player { width: 100%; height: auto; display: block; }
+        .file-details { background: #f9f9f9; padding: 15px; border-radius: 8px; }
+        .detail-row { display: grid; grid-template-columns: 150px 1fr; gap: 20px; margin-bottom: 15px; font-size: 14px; }
+        .detail-label { font-weight: 600; color: #34495e; }
+        .detail-value { color: #666; word-break: break-all; }
+        .detail-value code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 12px; }
+        
+        @media (max-width: 768px) { 
+            .stats-grid { grid-template-columns: 2fr; } 
+            .form-row { grid-template-columns: 1fr; }
+            .files-grid { grid-template-columns: 1fr; }
+            .detail-row { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -77,7 +124,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
             <button class="tab-btn" data-tab="upload" onclick="window.switchTab('upload')">📤 Upload File</button>
             <button class="tab-btn" data-tab="r2-config" onclick="window.switchTab('r2-config')">Main R2</button>
             <button class="tab-btn" data-tab="nodes" onclick="window.switchTab('nodes')">Sub-Instances</button>
-            <button class="tab-btn" data-tab="files" onclick="window.switchTab('files')">Files</button>
+            <button class="tab-btn" data-tab="files" onclick="window.switchTab('files')">📁 Files</button>
             <button class="tab-btn" data-tab="queue" onclick="window.switchTab('queue')">Upload Queue</button>
         </div>
  
@@ -186,11 +233,8 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
  
         <div id="files" class="tab-content">
             <div class="section">
-                <h2>Files</h2>
-                <table class="table">
-                    <thead><tr><th>Filename</th><th>Hash</th><th>Size</th><th>Status</th><th>Location</th></tr></thead>
-                    <tbody id="files-list"><tr><td colspan="5">Loading...</td></tr></tbody>
-                </table>
+                <h2>📁 Files</h2>
+                <div id="files-list" class="files-grid">Loading...</div>
             </div>
         </div>
  
@@ -286,16 +330,62 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
             try {
                 const res = await window.apiCall('/api/files');
                 const d = await res.json();
-                const html = d.files.map(f => '<tr><td>' + f.filename + '</td><td><code style="font-size: 11px;">' + f.hash.substring(0, 16) + '...</code></td><td>' + window.formatBytes(f.size) + '</td><td>' + f.status + '</td><td>' + (f.primary_location?.sub_instance || 'Main R2') + '</td></tr>').join('');
-                document.getElementById('files-list').innerHTML = html || '<tr><td colspan="5">No files</td></tr>';
-            } catch (e) { console.error(e); }
+                
+                if (!d.success) {
+                    document.getElementById('files-list').innerHTML = '<p>Error loading files</p>';
+                    return;
+                }
+
+                const html = d.files.map(f => {
+                    const isVideo = f.filename.match(/\.(mp4|webm|mkv|avi|mov|flv)$/i);
+                    const location = f.primary_location?.sub_instance || 'Main R2';
+                    const statusClass = f.status === 'distributed' ? 'distributed' : 'pending';
+                    
+                    return \`
+                        <div class="file-card">
+                            <div class="file-card-header">
+                                <div class="file-card-title">\${f.filename}</div>
+                                <div class="file-card-type">\${window.formatBytes(f.size)}</div>
+                            </div>
+                            <div class="file-card-body">
+                                <div style="margin-bottom: 10px;">
+                                    <span class="file-card-status \${statusClass}">\${f.status.toUpperCase()}</span>
+                                </div>
+                                <div class="file-card-location">
+                                    <div class="file-card-location-label">📍 Location</div>
+                                    <div class="file-card-location-value">\${location}</div>
+                                </div>
+                                <div class="file-card-info">
+                                    <div class="file-card-info-item">
+                                        <div class="file-card-info-label">Hash</div>
+                                        <div class="file-card-info-value">\${f.hash.substring(0, 12)}...</div>
+                                    </div>
+                                    <div class="file-card-info-item">
+                                        <div class="file-card-info-label">Created</div>
+                                        <div class="file-card-info-value">\${new Date(f.createdAt).toLocaleDateString()}</div>
+                                    </div>
+                                </div>
+                                <div class="file-card-actions">
+                                    \${f.status === 'distributed' && isVideo ? \`<button class="file-card-action-btn" onclick="window.viewFile('\${f.hash}')" style="flex: 1; cursor: pointer;">▶️ Play</button>\` : ''}
+                                    \${f.status === 'distributed' ? \`<button class="file-card-action-btn download" onclick="window.downloadFile('\${f.hash}', '\${f.filename}')" style="cursor: pointer;">⬇️ Download</button>\` : \`<button class="file-card-action-btn" disabled>Distributing...</button>\`}
+                                </div>
+                            </div>
+                        </div>
+                    \`;
+                }).join('');
+                
+                document.getElementById('files-list').innerHTML = html || '<p>No files yet</p>';
+            } catch (e) { 
+                console.error(e);
+                document.getElementById('files-list').innerHTML = '<p>Error loading files</p>';
+            }
         };
  
         window.loadQueue = async function() {
             try {
                 const res = await window.apiCall('/api/upload-queue');
                 const d = await res.json();
-                const html = d.queue.map(q => '<tr><td><code>' + q.hash.substring(0, 16) + '...</code></td><td>' + q.filename + '</td><td>' + window.formatBytes(q.size) + '</td><td>' + q.status + '</td><td>' + q.attempts + '/' + q.max_attempts + '</td><td>' + (q.error_message || '-') + '</td></tr>').join('');
+                const html = d.queue.map(q => '<tr><td><code>' + q.hash.substring(0, 16) + '...</code></td><td>' + q.filename + '</td><td>' + window.formatBytes(q.size) + '</td><td>' + q.status + '</td><td>' + (q.attempts || 0) + '/' + (q.max_attempts || 3) + '</td><td>' + (q.error_message || '-') + '</td></tr>').join('');
                 document.getElementById('queue-list').innerHTML = html || '<tr><td colspan="6">Queue empty</td></tr>';
             } catch (e) { console.error(e); }
         };
@@ -342,6 +432,105 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 if (!res.ok) { window.showMessage('add-node-message', d.error, 'error'); return; }
                 window.loadNodes();
             } catch (err) { window.showMessage('add-node-message', 'Error: ' + err.message, 'error'); }
+        };
+
+        // View File - Video Player Modal
+        window.viewFile = async function(hash) {
+            try {
+                const res = await window.apiCall('/api/file/' + hash);
+                const data = await res.json();
+                
+                if (!data.success) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                const file = data.file;
+                let videoSrc = '';
+                let location = '';
+
+                if (file.location === 'sub_instance') {
+                    videoSrc = file.signed_url;
+                    location = 'Sub-Instance: ' + file.sub_instance + ' / ' + file.bucket;
+                } else {
+                    alert('File not yet distributed to sub-instance. It\\'s still in Main R2.');
+                    return;
+                }
+
+                const modal = document.createElement('div');
+                modal.className = 'modal active';
+                modal.id = 'file-modal';
+                modal.innerHTML = \`
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <div class="modal-title">📹 \${file.filename}</div>
+                            <button class="modal-close" onclick="document.getElementById('file-modal').remove()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="video-container">
+                                <video class="video-player" controls style="width: 100%; height: auto;">
+                                    <source src="\${videoSrc}" type="video/mp4">
+                                    Your browser does not support the video tag.
+                                </video>
+                            </div>
+                            <div class="file-details">
+                                <div class="detail-row">
+                                    <div class="detail-label">Filename:</div>
+                                    <div class="detail-value">\${file.filename}</div>
+                                </div>
+                                <div class="detail-row">
+                                    <div class="detail-label">Hash:</div>
+                                    <div class="detail-value"><code>\${file.hash}</code></div>
+                                </div>
+                                <div class="detail-row">
+                                    <div class="detail-label">Size:</div>
+                                    <div class="detail-value">\${window.formatBytes(file.size)}</div>
+                                </div>
+                                <div class="detail-row">
+                                    <div class="detail-label">Status:</div>
+                                    <div class="detail-value" style="text-transform: capitalize;">\${file.status}</div>
+                                </div>
+                                <div class="detail-row">
+                                    <div class="detail-label">Location:</div>
+                                    <div class="detail-value">\${location}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                \`;
+
+                document.body.appendChild(modal);
+
+                // Close on outside click
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) modal.remove();
+                });
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        };
+
+        // Download File
+        window.downloadFile = async function(hash, filename) {
+            try {
+                const res = await window.apiCall('/api/file/' + hash);
+                const data = await res.json();
+                
+                if (!data.success) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                const file = data.file;
+
+                if (file.location === 'sub_instance') {
+                    window.open(file.signed_url, '_blank');
+                } else {
+                    alert('File not yet distributed. Cannot download.');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
         };
  
         // Upload functionality
@@ -444,7 +633,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
         }, 3000);
     </script>
 </body>
-</html>`;
+</html>` ;
 
 export const LOGIN_HTML = `<!DOCTYPE html>
 <html lang="en">

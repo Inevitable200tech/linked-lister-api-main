@@ -170,6 +170,26 @@ async function deleteFromMainR2(hash) {
     }
 }
 
+// ============ GET SIGNED URL FROM SUB-INSTANCE ============
+
+async function getSignedUrlFromSubInstance(subInstance, hash) {
+    try {
+        const url = `${subInstance.url}/api/signed-url?hash=${hash}`;
+        console.log(`[SIGNED-URL] 📝 Getting signed URL from ${subInstance.node_id}`);
+        console.log(`[SIGNED-URL]    URL: ${url}`);
+
+        const response = await axios.get(url, { timeout: 5000 });
+
+        console.log(`[SIGNED-URL] ✅ Got signed URL from ${subInstance.node_id}`);
+        console.log(`[SIGNED-URL]    Expires at: ${new Date(response.data.expires_at).toLocaleString()}`);
+
+        return response.data;
+    } catch (err) {
+        console.error(`[SIGNED-URL] ❌ Failed to get signed URL: ${err.message}`);
+        return null;
+    }
+}
+
 // ============ AUTH MIDDLEWARE ============
 
 function verifyToken(req, res, next) {
@@ -732,6 +752,108 @@ app.get('/api/files', verifyToken, async (req, res) => {
                 primary_location: f.locations[0] || { sub_instance: 'Main R2' },
                 createdAt: f.createdAt
             }))
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ FILE STREAMING - GET FILE DETAILS WITH SIGNED URL ============
+
+app.get('/api/file/:hash', verifyToken, async (req, res) => {
+    try {
+        const { hash } = req.params;
+
+        const fileDoc = await File.findOne({ hash });
+        if (!fileDoc) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+
+        // If file is distributed to sub-instance
+        if (fileDoc.locations.length > 0) {
+            const location = fileDoc.locations[0];
+            const subInstance = await SubInstance.findOne({ node_id: location.sub_instance });
+
+            if (!subInstance) {
+                return res.status(404).json({ error: 'Sub-instance not found' });
+            }
+
+            // Get signed URL from sub-instance
+            const signedUrlData = await getSignedUrlFromSubInstance(subInstance, hash);
+
+            if (!signedUrlData) {
+                return res.status(500).json({ error: 'Could not get signed URL' });
+            }
+
+            return res.json({
+                success: true,
+                file: {
+                    hash: fileDoc.hash,
+                    filename: fileDoc.filename,
+                    size: fileDoc.size,
+                    status: fileDoc.status,
+                    location: 'sub_instance',
+                    sub_instance: location.sub_instance,
+                    bucket: location.bucket,
+                    key: location.key,
+                    signed_url: signedUrlData.signed_url,
+                    expires_at: signedUrlData.expires_at
+                }
+            });
+        }
+
+        // If still in main R2
+        return res.json({
+            success: true,
+            file: {
+                hash: fileDoc.hash,
+                filename: fileDoc.filename,
+                size: fileDoc.size,
+                status: fileDoc.status,
+                location: 'main_r2',
+                bucket: fileDoc.main_r2_location?.bucket,
+                key: fileDoc.main_r2_location?.key
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ FILE STREAMING - STREAM FILE ENDPOINT ============
+
+app.get('/api/file/:hash/stream', verifyToken, async (req, res) => {
+    try {
+        const { hash } = req.params;
+
+        const fileDoc = await File.findOne({ hash });
+        if (!fileDoc) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+
+        if (!fileDoc.locations.length) {
+            return res.status(404).json({ error: 'File not distributed yet' });
+        }
+
+        const location = fileDoc.locations[0];
+        const subInstance = await SubInstance.findOne({ node_id: location.sub_instance });
+
+        if (!subInstance) {
+            return res.status(404).json({ error: 'Sub-instance not found' });
+        }
+
+        // Get signed URL
+        const signedUrlData = await getSignedUrlFromSubInstance(subInstance, hash);
+
+        if (!signedUrlData) {
+            return res.status(500).json({ error: 'Could not get signed URL' });
+        }
+
+        // Return signed URL for client-side streaming
+        res.json({
+            success: true,
+            signed_url: signedUrlData.signed_url,
+            expires_at: signedUrlData.expires_at
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
