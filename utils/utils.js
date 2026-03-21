@@ -38,6 +38,30 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
         .table th { background: #f5f5f5; font-weight: 600; }
         .card { background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
         .card h3 { margin-bottom: 10px; color: #34495e; }
+        
+        /* Upload styles */
+        .upload-zone { border: 2px dashed #3498db; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.3s; background: #f8f9fa; }
+        .upload-zone:hover { border-color: #2980b9; background: #eef5f9; }
+        .upload-zone.dragover { border-color: #e74c3c; background: #fff5f5; }
+        .upload-zone.active { border-color: #27ae60; background: #f0fdf4; }
+        .upload-zone-text { font-size: 18px; color: #666; margin-bottom: 10px; }
+        .upload-zone-hint { font-size: 12px; color: #999; }
+        #file-input { display: none; }
+        .upload-progress { margin-top: 20px; }
+        .progress-item { background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+        .progress-item-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+        .progress-item-name { font-weight: 500; }
+        .progress-item-status { font-size: 12px; color: #666; }
+        .progress-bar { width: 100%; height: 8px; background: #ddd; border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+        .progress-bar-fill { height: 100%; background: #3498db; width: 0%; transition: width 0.3s; }
+        .progress-item.success .progress-bar-fill { background: #27ae60; width: 100%; }
+        .progress-item.error .progress-bar-fill { background: #e74c3c; width: 100%; }
+        .progress-info { font-size: 12px; color: #666; }
+        .upload-result { margin-top: 20px; padding: 15px; border-radius: 8px; }
+        .upload-result.success { background: #d4edda; color: #155724; }
+        .upload-result.error { background: #f8d7da; color: #721c24; }
+        .upload-result-hash { font-family: monospace; font-size: 12px; word-break: break-all; }
+        
         @media (max-width: 768px) { .stats-grid { grid-template-columns: 2fr; } .form-row { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -47,15 +71,16 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
             <h1>🚀 Main System Dashboard</h1>
             <button class="logout-btn" onclick="window.logout()">🚪 Logout</button>
         </header>
-
+ 
         <div class="tabs">
             <button class="tab-btn active" data-tab="overview" onclick="window.switchTab('overview')">Overview</button>
+            <button class="tab-btn" data-tab="upload" onclick="window.switchTab('upload')">📤 Upload File</button>
             <button class="tab-btn" data-tab="r2-config" onclick="window.switchTab('r2-config')">Main R2</button>
             <button class="tab-btn" data-tab="nodes" onclick="window.switchTab('nodes')">Sub-Instances</button>
             <button class="tab-btn" data-tab="files" onclick="window.switchTab('files')">Files</button>
             <button class="tab-btn" data-tab="queue" onclick="window.switchTab('queue')">Upload Queue</button>
         </div>
-
+ 
         <div id="overview" class="tab-content active">
             <div class="section">
                 <h2>System Status</h2>
@@ -67,7 +92,56 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 </div>
             </div>
         </div>
-
+ 
+        <div id="upload" class="tab-content">
+            <div class="section">
+                <h2>📤 Upload File</h2>
+                <p style="margin-bottom: 20px; color: #666;">Upload a video or file to test the distributed storage workflow. Files will be queued for distribution to sub-instances.</p>
+                
+                <div id="upload-message"></div>
+ 
+                <div class="upload-zone" id="upload-zone" ondrop="window.handleDrop(event)" ondragover="window.handleDragOver(event)" ondragleave="window.handleDragLeave(event)" onclick="document.getElementById('file-input').click()">
+                    <div class="upload-zone-text">📁 Drop files here or click to select</div>
+                    <div class="upload-zone-hint">Supports video, images, and any file type</div>
+                </div>
+                <input type="file" id="file-input" onchange="window.handleFileSelect(event)">
+ 
+                <div class="upload-progress" id="upload-progress"></div>
+            </div>
+ 
+            <div class="section">
+                <h2>How it works</h2>
+                <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; margin-bottom: 15px;">
+                    <h3 style="margin-bottom: 10px; color: #34495e;">📋 Workflow</h3>
+                    <ol style="margin-left: 20px; color: #666;">
+                        <li><strong>Upload:</strong> File is sent to main system and stored in Main R2 bucket</li>
+                        <li><strong>Queued:</strong> File is added to upload queue for distribution</li>
+                        <li><strong>Processing:</strong> Queue processor checks for suitable sub-instances</li>
+                        <li><strong>Distributed:</strong> File is transferred to a sub-instance with enough space</li>
+                        <li><strong>Complete:</strong> File status updated to "distributed"</li>
+                    </ol>
+                </div>
+ 
+                <div style="background: #fef9e7; padding: 15px; border-radius: 8px; border-left: 4px solid #f39c12; margin-bottom: 15px;">
+                    <h3 style="margin-bottom: 10px; color: #34495e;">⚠️ Requirements</h3>
+                    <ul style="margin-left: 20px; color: #666;">
+                        <li>✅ Main R2 bucket must be configured (Main R2 tab)</li>
+                        <li>✅ At least 1 sub-instance must be registered (Sub-Instances tab)</li>
+                        <li>✅ Sub-instance must be online and have available space</li>
+                    </ul>
+                </div>
+ 
+                <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #27ae60; margin-bottom: 15px;">
+                    <h3 style="margin-bottom: 10px; color: #34495e;">💡 Monitoring</h3>
+                    <ul style="margin-left: 20px; color: #666;">
+                        <li>📊 Check <strong>Upload Queue</strong> tab to see queue progress</li>
+                        <li>📁 Check <strong>Files</strong> tab to see final status and location</li>
+                        <li>🔍 Watch server logs for detailed [QUEUE] and [SPACE-CHECK] messages</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+ 
         <div id="r2-config" class="tab-content">
             <div class="section">
                 <h2>Configure Main R2 Bucket</h2>
@@ -84,13 +158,13 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                     <button type="submit">Add Main R2 Bucket</button>
                 </form>
             </div>
-
+ 
             <div class="section">
                 <h2>Active Main R2 Buckets</h2>
                 <div id="r2-list">Loading...</div>
             </div>
         </div>
-
+ 
         <div id="nodes" class="tab-content">
             <div class="section">
                 <h2>Add Sub-Instance</h2>
@@ -103,13 +177,13 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                     <button type="submit">Add Sub-Instance</button>
                 </form>
             </div>
-
+ 
             <div class="section">
                 <h2>Sub-Instances</h2>
                 <div id="nodes-list">Loading...</div>
             </div>
         </div>
-
+ 
         <div id="files" class="tab-content">
             <div class="section">
                 <h2>Files</h2>
@@ -119,7 +193,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 </table>
             </div>
         </div>
-
+ 
         <div id="queue" class="tab-content">
             <div class="section">
                 <h2>Upload Queue</h2>
@@ -130,17 +204,18 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
             </div>
         </div>
     </div>
+ 
 <script>
         const token = localStorage.getItem('token');
         if (!token) {
             window.location.href = '/';
         }
-
+ 
         window.logout = function() {
             localStorage.removeItem('token');
             window.location.href = '/';
         };
-
+ 
         window.switchTab = function(tab) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -153,18 +228,18 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
             if (tab === 'files') window.loadFiles();
             if (tab === 'queue') window.loadQueue();
         };
-
+ 
         window.showMessage = function(el, msg, type) {
             document.getElementById(el).innerHTML = '<div class="message ' + type + '">' + msg + '</div>';
-            setTimeout(() => document.getElementById(el).innerHTML = '', 3000);
+            setTimeout(() => document.getElementById(el).innerHTML = '', 5000);
         };
-
+ 
         window.formatBytes = function(b) {
             if (b === 0) return '0 B';
             const k = 1024, s = ['B', 'KB', 'MB', 'GB'], i = Math.floor(Math.log(b) / Math.log(k));
             return (b / Math.pow(k, i)).toFixed(2) + ' ' + s[i];
         };
-
+ 
         window.apiCall = async function(url, opts = {}) {
             const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...opts.headers };
             const res = await fetch(url, { ...opts, headers });
@@ -175,7 +250,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
             }
             return res;
         };
-
+ 
         window.loadOverview = async function() {
             try {
                 const res = await window.apiCall('/api/dashboard/status');
@@ -187,7 +262,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 document.getElementById('stat-buckets').textContent = totalBuckets;
             } catch (e) { console.error(e); }
         };
-
+ 
         window.loadMainR2 = async function() {
             try {
                 const res = await window.apiCall('/api/main-r2');
@@ -196,7 +271,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 document.getElementById('r2-list').innerHTML = html || '<p>No main R2 buckets configured</p>';
             } catch (e) { console.error(e); }
         };
-
+ 
         window.loadNodes = async function() {
             try {
                 const res = await window.apiCall('/api/dashboard/sub-instances');
@@ -206,7 +281,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 document.querySelectorAll('.delete-node-btn').forEach(btn => btn.addEventListener('click', e => window.deleteNode(e.target.dataset.nodeId)));
             } catch (e) { console.error(e); }
         };
-
+ 
         window.loadFiles = async function() {
             try {
                 const res = await window.apiCall('/api/files');
@@ -215,7 +290,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 document.getElementById('files-list').innerHTML = html || '<tr><td colspan="5">No files</td></tr>';
             } catch (e) { console.error(e); }
         };
-
+ 
         window.loadQueue = async function() {
             try {
                 const res = await window.apiCall('/api/upload-queue');
@@ -224,7 +299,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 document.getElementById('queue-list').innerHTML = html || '<tr><td colspan="6">Queue empty</td></tr>';
             } catch (e) { console.error(e); }
         };
-
+ 
         window.addMainR2 = async function(e) {
             e.preventDefault();
             const data = {
@@ -242,7 +317,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 window.loadMainR2();
             } catch (err) { window.showMessage('r2-message', 'Error: ' + err.message, 'error'); }
         };
-
+ 
         window.addNode = async function(e) {
             e.preventDefault();
             const data = {
@@ -258,7 +333,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 window.loadNodes();
             } catch (err) { window.showMessage('add-node-message', 'Error: ' + err.message, 'error'); }
         };
-
+ 
         window.deleteNode = async function(nodeId) {
             if (!confirm('Delete ' + nodeId + '?')) return;
             try {
@@ -268,20 +343,108 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 window.loadNodes();
             } catch (err) { window.showMessage('add-node-message', 'Error: ' + err.message, 'error'); }
         };
-
+ 
+        // Upload functionality
+        window.handleDragOver = function(e) {
+            e.preventDefault();
+            document.getElementById('upload-zone').classList.add('dragover');
+        };
+ 
+        window.handleDragLeave = function(e) {
+            e.preventDefault();
+            document.getElementById('upload-zone').classList.remove('dragover');
+        };
+ 
+        window.handleDrop = function(e) {
+            e.preventDefault();
+            document.getElementById('upload-zone').classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) window.handleFiles(files);
+        };
+ 
+        window.handleFileSelect = function(e) {
+            const files = e.target.files;
+            if (files.length > 0) window.handleFiles(files);
+        };
+ 
+        window.handleFiles = async function(files) {
+            const progressDiv = document.getElementById('upload-progress');
+            progressDiv.innerHTML = '';
+ 
+            for (let file of files) {
+                const itemId = 'progress-' + Math.random().toString(36).substr(2, 9);
+                const progressItem = document.createElement('div');
+                progressItem.id = itemId;
+                progressItem.className = 'progress-item';
+                progressItem.innerHTML = '<div class="progress-item-header"><div class="progress-item-name">' + file.name + '</div><div class="progress-item-status">Uploading...</div></div><div class="progress-bar"><div class="progress-bar-fill"></div></div><div class="progress-info">0% - 0 KB / ' + window.formatBytes(file.size) + '</div>';
+                progressDiv.appendChild(progressItem);
+ 
+                const formData = new FormData();
+                formData.append('file', file);
+ 
+                try {
+                    const xhr = new XMLHttpRequest();
+                    
+                    xhr.upload.addEventListener('progress', (e) => {
+                        if (e.lengthComputable) {
+                            const percentComplete = (e.loaded / e.total) * 100;
+                            const fill = progressItem.querySelector('.progress-bar-fill');
+                            fill.style.width = percentComplete + '%';
+                            const info = progressItem.querySelector('.progress-info');
+                            info.textContent = Math.round(percentComplete) + '% - ' + window.formatBytes(e.loaded) + ' / ' + window.formatBytes(e.total);
+                        }
+                    });
+ 
+                    xhr.addEventListener('load', () => {
+                        if (xhr.status === 201) {
+                            const result = JSON.parse(xhr.responseText);
+                            progressItem.classList.add('success');
+                            progressItem.querySelector('.progress-item-status').textContent = '✅ Uploaded! Queued for distribution.';
+                            progressItem.querySelector('.progress-info').innerHTML = '<strong>Hash:</strong> <code style="font-size: 11px;">' + result.hash.substring(0, 24) + '...</code><br><strong>Status:</strong> ' + result.status;
+                            
+                            // Auto-load queue after 1 second
+                            setTimeout(() => {
+                                window.loadQueue();
+                                window.loadFiles();
+                            }, 1000);
+                        } else {
+                            progressItem.classList.add('error');
+                            const result = JSON.parse(xhr.responseText);
+                            progressItem.querySelector('.progress-item-status').textContent = '❌ Error: ' + (result.error || 'Unknown error');
+                        }
+                    });
+ 
+                    xhr.addEventListener('error', () => {
+                        progressItem.classList.add('error');
+                        progressItem.querySelector('.progress-item-status').textContent = '❌ Error uploading file';
+                    });
+ 
+                    xhr.open('POST', '/api/upload');
+                    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+                    xhr.send(formData);
+ 
+                } catch (err) {
+                    progressItem.classList.add('error');
+                    progressItem.querySelector('.progress-item-status').textContent = '❌ Error: ' + err.message;
+                }
+            }
+        };
+ 
         document.addEventListener('DOMContentLoaded', function() {
             const tabButtons = document.querySelectorAll('[data-tab]');
             tabButtons.forEach(btn => {
                 btn.addEventListener('click', e => window.switchTab(e.target.dataset.tab));
             });
         });
-
+ 
         window.loadOverview();
-        setInterval(window.loadQueue, 5000);
+        setInterval(() => {
+            window.loadQueue();
+            window.loadFiles();
+        }, 3000);
     </script>
 </body>
 </html>`;
-
 
 export const LOGIN_HTML = `<!DOCTYPE html>
 <html lang="en">
