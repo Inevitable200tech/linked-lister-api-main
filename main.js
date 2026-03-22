@@ -64,7 +64,7 @@ initializeR2Client();
 
 // ============ R2 OPERATIONS ============
 
-async function uploadToMainR2(fileName, fileBuffer, hash) {
+async function uploadToMainR2(fileName, fileBuffer, hash, title) {
     try {
         if (!r2Client || !r2Config) {
             await initializeR2Client();
@@ -76,16 +76,27 @@ async function uploadToMainR2(fileName, fileBuffer, hash) {
 
         const key = `uploads/${hash}`;
 
+        // Sanitize title for R2 metadata headers
+        const sanitizedTitle = (title || fileName)
+            .substring(0, 100)
+            .replace(/[^a-zA-Z0-9\-_\s]/g, '_')
+            .replace(/\s+/g, '_');
+
         console.log(`[R2-UPLOAD] 📤 Uploading to Main R2`);
         console.log(`[R2-UPLOAD]    Bucket: ${r2Config.bucket_name}`);
         console.log(`[R2-UPLOAD]    Key: ${key}`);
+        console.log(`[R2-UPLOAD]    Title: ${sanitizedTitle}`);
         console.log(`[R2-UPLOAD]    Size: ${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB`);
 
         const command = new PutObjectCommand({
             Bucket: r2Config.bucket_name,
             Key: key,
             Body: fileBuffer,
-            ContentType: 'application/octet-stream'
+            ContentType: 'application/octet-stream',
+            Metadata: {
+                'original-title': sanitizedTitle,
+                'original-filename': fileName.substring(0, 100)
+            }
         });
 
         await r2Client.send(command);
@@ -287,18 +298,20 @@ async function getSuitableNodes(fileSize) {
     return suitable.sort((a, b) => b.free_space - a.free_space);
 }
 
-async function uploadFileToSubInstance(subInstance, fileData, fileName, fileHash) {
+async function uploadFileToSubInstance(subInstance, fileData, fileName, fileHash, title) {
     try {
         const url = `${subInstance.url}/api/upload`;
         console.log(`[UPLOAD-NODE] 📤 Uploading to ${subInstance.node_id}`);
         console.log(`[UPLOAD-NODE]    URL: ${url}`);
         console.log(`[UPLOAD-NODE]    Filename: ${fileName}`);
+        console.log(`[UPLOAD-NODE]    Title: ${title || 'Not provided'}`);
         console.log(`[UPLOAD-NODE]    Size: ${(fileData.length / 1024 / 1024).toFixed(2)} MB`);
 
         const FormData = (await import('form-data')).default;
         const formData = new FormData();
         formData.append('file', fileData, fileName);
         formData.append('hash', fileHash);
+        formData.append('title', title || fileName);
 
         console.log(`[UPLOAD-NODE] ⏳ Sending to node...`);
         
@@ -374,11 +387,12 @@ async function processUploadQueue() {
 
             console.log(`\n[QUEUE] ═══════════════════════════════════════`);
             console.log(`[QUEUE] Processing: ${pending.hash}`);
+            console.log(`[QUEUE] Title: ${pending.title || 'Not provided'}`);
             console.log(`[QUEUE] ═══════════════════════════════════════`);
 
             await UploadQueue.updateOne(
                 { _id: pending._id },
-                { status: 'processing', updated_at: new Date() }
+                { status: 'processing' }
             );
 
             const suitableNodes = await getSuitableNodes(pending.size);
@@ -389,8 +403,7 @@ async function processUploadQueue() {
                     { _id: pending._id },
                     {
                         status: 'failed',
-                        error_message: 'No suitable nodes available',
-                        updated_at: new Date()
+                        error_message: 'No suitable nodes available'
                     }
                 );
                 console.log(`[QUEUE] ═══════════════════════════════════════\n`);
@@ -413,7 +426,8 @@ async function processUploadQueue() {
                         subInstance,
                         fileBuffer,
                         pending.filename,
-                        pending.hash
+                        pending.hash,
+                        pending.title
                     );
 
                     if (!uploadResult) {
@@ -432,8 +446,7 @@ async function processUploadQueue() {
                                 sub_instance: subInstance.node_id,
                                 bucket: uploadResult.bucket,
                                 key: uploadResult.key,
-                                status: 'active',
-                                moved_at: new Date()
+                                status: 'active'
                             }],
                             main_r2_location: null
                         }
@@ -458,7 +471,7 @@ async function processUploadQueue() {
             if (uploadedSuccessfully) {
                 await UploadQueue.updateOne(
                     { _id: pending._id },
-                    { status: 'completed', updated_at: new Date() }
+                    { status: 'completed' }
                 );
                 console.log(`[QUEUE] ✅ Completed: ${pending.hash}`);
             } else {
@@ -466,8 +479,7 @@ async function processUploadQueue() {
                     { _id: pending._id },
                     {
                         status: 'failed',
-                        error_message: 'All nodes failed',
-                        updated_at: new Date()
+                        error_message: 'All nodes failed'
                     }
                 );
                 console.log(`[QUEUE] ❌ All nodes failed for: ${pending.hash}`);
@@ -645,24 +657,27 @@ app.post('/api/upload', async (req, res) => {
         }
 
         const file = req.files.file;
+        const { title } = req.body;
         const hash = hashFile(file.data);
         const fileSize = file.size;
 
         console.log('\n[UPLOAD] ═══════════════════════════════════════');
         console.log('[UPLOAD] 📤 File received');
         console.log('[UPLOAD]    Hash: ' + hash);
+        console.log('[UPLOAD]    Filename: ' + file.name);
+        console.log('[UPLOAD]    Title: ' + (title || 'Not provided'));
         console.log('[UPLOAD]    Size: ' + (fileSize / 1024 / 1024).toFixed(2) + ' MB');
-        console.log('[UPLOAD]    Name: ' + file.name);
 
         const existingFile = await File.findOne({ hash });
         if (existingFile) {
             console.log('[UPLOAD] ⚠️  Duplicate detected');
             console.log('[UPLOAD] ═══════════════════════════════════════\n');
-            return res.status(201).json({
+            return res.status(200).json({
                 success: true,
                 is_duplicate: true,
                 hash,
                 filename: existingFile.filename,
+                title: existingFile.title,
                 size: existingFile.size,
                 locations: existingFile.locations,
                 message: 'File already exists in system'
@@ -677,19 +692,19 @@ app.post('/api/upload', async (req, res) => {
         }
 
         // Upload to Main R2
-        const r2Result = await uploadToMainR2(file.name, file.data, hash);
+        const r2Result = await uploadToMainR2(file.name, file.data, hash, title);
 
         // Save metadata only to MongoDB (NO file data!)
-        console.log('[UPLOAD] 💾 Saving metadata to MongoDB (no file data)');
+        console.log('[UPLOAD] 💾 Saving metadata to MongoDB');
         const newFile = new File({
             hash,
             filename: file.name,
+            title: title || file.name,
             size: fileSize,
             status: 'pending_distribution',
             main_r2_location: {
                 bucket: r2Result.bucket,
-                key: r2Result.key,
-                stored_at: new Date()
+                key: r2Result.key
             }
         });
 
@@ -699,6 +714,7 @@ app.post('/api/upload', async (req, res) => {
         const queueItem = new UploadQueue({
             hash,
             filename: file.name,
+            title: title || file.name,
             size: fileSize,
             main_r2_key: r2Result.key,
             status: 'pending'
@@ -708,13 +724,15 @@ app.post('/api/upload', async (req, res) => {
         console.log('[UPLOAD] 📋 Added to queue');
         console.log('[UPLOAD] ═══════════════════════════════════════\n');
 
-        res.status(201).json({
+        res.status(202).json({
             success: true,
             hash,
             filename: file.name,
+            title: title || file.name,
             size: fileSize,
             message: 'File queued for distribution',
-            status: 'pending_distribution'
+            status: 'pending_distribution',
+            pollUrl: `/api/file/${hash}`
         });
 
     } catch (err) {
@@ -739,18 +757,18 @@ app.get('/api/upload-queue', verifyToken, async (req, res) => {
 
 app.get('/api/files', verifyToken, async (req, res) => {
     try {
-        const files = await File.find().sort({ createdAt: -1 });
+        const files = await File.find().sort({ created_at: -1 });
         res.json({
             success: true,
             total: files.length,
             files: files.map(f => ({
-                file_id: f._id,
                 hash: f.hash,
                 filename: f.filename,
+                title: f.title,
                 size: f.size,
                 status: f.status,
-                primary_location: f.locations[0] || { sub_instance: 'Main R2' },
-                createdAt: f.createdAt
+                location: f.locations[0]?.sub_instance || 'Main R2',
+                created_at: f.created_at
             }))
         });
     } catch (err) {
@@ -760,59 +778,68 @@ app.get('/api/files', verifyToken, async (req, res) => {
 
 // ============ FILE STREAMING - GET FILE DETAILS WITH SIGNED URL ============
 
-app.get('/api/file/:hash', verifyToken, async (req, res) => {
+app.get('/api/file/:hash', async (req, res) => {
     try {
         const { hash } = req.params;
 
         const fileDoc = await File.findOne({ hash });
         if (!fileDoc) {
-            return res.status(404).json({ error: 'File not found' });
-        }
-
-        // If file is distributed to sub-instance
-        if (fileDoc.locations.length > 0) {
-            const location = fileDoc.locations[0];
-            const subInstance = await SubInstance.findOne({ node_id: location.sub_instance });
-
-            if (!subInstance) {
-                return res.status(404).json({ error: 'Sub-instance not found' });
-            }
-
-            // Get signed URL from sub-instance
-            const signedUrlData = await getSignedUrlFromSubInstance(subInstance, hash);
-
-            if (!signedUrlData) {
-                return res.status(500).json({ error: 'Could not get signed URL' });
-            }
-
-            return res.json({
-                success: true,
-                file: {
-                    hash: fileDoc.hash,
-                    filename: fileDoc.filename,
-                    size: fileDoc.size,
-                    status: fileDoc.status,
-                    location: 'sub_instance',
-                    sub_instance: location.sub_instance,
-                    bucket: location.bucket,
-                    key: location.key,
-                    signed_url: signedUrlData.signed_url,
-                    expires_at: signedUrlData.expires_at
-                }
+            return res.status(404).json({ 
+                success: false,
+                error: 'File not found' 
             });
         }
 
-        // If still in main R2
+        // File still being processed
+        if (!fileDoc.locations.length) {
+            return res.status(202).json({
+                success: false,
+                error: 'File still being distributed',
+                hash: fileDoc.hash,
+                filename: fileDoc.filename,
+                title: fileDoc.title,
+                status: fileDoc.status
+            });
+        }
+
+        // File distributed to sub-instance
+        const location = fileDoc.locations[0];
+        const subInstance = await SubInstance.findOne({ node_id: location.sub_instance });
+
+        if (!subInstance) {
+            return res.status(503).json({ 
+                success: false,
+                error: 'Storage node unavailable' 
+            });
+        }
+
+        // Get signed URL from sub-instance
+        const signedUrlData = await getSignedUrlFromSubInstance(subInstance, hash);
+
+        if (!signedUrlData) {
+            return res.status(500).json({ 
+                success: false,
+                error: 'Could not get signed URL' 
+            });
+        }
+
+        // Perfect for external APIs
         return res.json({
             success: true,
             file: {
                 hash: fileDoc.hash,
                 filename: fileDoc.filename,
+                title: fileDoc.title,
                 size: fileDoc.size,
                 status: fileDoc.status,
-                location: 'main_r2',
-                bucket: fileDoc.main_r2_location?.bucket,
-                key: fileDoc.main_r2_location?.key
+                location: 'sub_instance',
+                sub_instance: location.sub_instance,
+                bucket: location.bucket,
+                key: location.key
+            },
+            download: {
+                url: signedUrlData.signed_url,
+                expiresAt: signedUrlData.expires_at
             }
         });
     } catch (err) {
@@ -820,45 +847,6 @@ app.get('/api/file/:hash', verifyToken, async (req, res) => {
     }
 });
 
-// ============ FILE STREAMING - STREAM FILE ENDPOINT ============
-
-app.get('/api/file/:hash/stream', verifyToken, async (req, res) => {
-    try {
-        const { hash } = req.params;
-
-        const fileDoc = await File.findOne({ hash });
-        if (!fileDoc) {
-            return res.status(404).json({ error: 'File not found' });
-        }
-
-        if (!fileDoc.locations.length) {
-            return res.status(404).json({ error: 'File not distributed yet' });
-        }
-
-        const location = fileDoc.locations[0];
-        const subInstance = await SubInstance.findOne({ node_id: location.sub_instance });
-
-        if (!subInstance) {
-            return res.status(404).json({ error: 'Sub-instance not found' });
-        }
-
-        // Get signed URL
-        const signedUrlData = await getSignedUrlFromSubInstance(subInstance, hash);
-
-        if (!signedUrlData) {
-            return res.status(500).json({ error: 'Could not get signed URL' });
-        }
-
-        // Return signed URL for client-side streaming
-        res.json({
-            success: true,
-            signed_url: signedUrlData.signed_url,
-            expires_at: signedUrlData.expires_at
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
 const PORT = process.env.MAIN_PORT || 3000;
 app.listen(PORT, () => {

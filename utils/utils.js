@@ -68,6 +68,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
         .file-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-2px); }
         .file-card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; }
         .file-card-title { font-weight: 600; word-break: break-word; margin-bottom: 5px; }
+        .file-card-subtitle { font-size: 12px; opacity: 0.8; margin-bottom: 8px; }
         .file-card-type { font-size: 12px; opacity: 0.9; }
         .file-card-body { padding: 15px; }
         .file-card-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; font-size: 13px; }
@@ -146,6 +147,14 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 <p style="margin-bottom: 20px; color: #666;">Upload a video or file to test the distributed storage workflow. Files will be queued for distribution to sub-instances.</p>
                 
                 <div id="upload-message"></div>
+
+                <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; margin-bottom: 20px;">
+                    <div class="form-group">
+                        <label for="upload-title">📝 Title (Optional)</label>
+                        <input type="text" id="upload-title" placeholder="Give your file a title..." style="margin-bottom: 0;">
+                    </div>
+                    <div style="font-size: 12px; color: #666; margin-top: 8px;">💡 Add a descriptive title for your file. If not provided, filename will be used.</div>
+                </div>
  
                 <div class="upload-zone" id="upload-zone" ondrop="window.handleDrop(event)" ondragover="window.handleDragOver(event)" ondragleave="window.handleDragLeave(event)" onclick="document.getElementById('file-input').click()">
                     <div class="upload-zone-text">📁 Drop files here or click to select</div>
@@ -242,8 +251,8 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
             <div class="section">
                 <h2>Upload Queue</h2>
                 <table class="table">
-                    <thead><tr><th>Hash</th><th>Filename</th><th>Size</th><th>Status</th><th>Attempts</th><th>Message</th></tr></thead>
-                    <tbody id="queue-list"><tr><td colspan="6">Loading...</td></tr></tbody>
+                    <thead><tr><th>Hash</th><th>Filename</th><th>Title</th><th>Size</th><th>Status</th><th>Attempts</th><th>Message</th></tr></thead>
+                    <tbody id="queue-list"><tr><td colspan="7">Loading...</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -338,13 +347,14 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
 
                 const html = d.files.map(f => {
                     const isVideo = f.filename.match(/\.(mp4|webm|mkv|avi|mov|flv)$/i);
-                    const location = f.primary_location?.sub_instance || 'Main R2';
+                    const location = f.location || 'Main R2';
                     const statusClass = f.status === 'distributed' ? 'distributed' : 'pending';
                     
                     return \`
                         <div class="file-card">
                             <div class="file-card-header">
-                                <div class="file-card-title">\${f.filename}</div>
+                                <div class="file-card-title">\${f.title || f.filename}</div>
+                                <div class="file-card-subtitle">\${f.filename}</div>
                                 <div class="file-card-type">\${window.formatBytes(f.size)}</div>
                             </div>
                             <div class="file-card-body">
@@ -362,7 +372,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                                     </div>
                                     <div class="file-card-info-item">
                                         <div class="file-card-info-label">Created</div>
-                                        <div class="file-card-info-value">\${new Date(f.createdAt).toLocaleDateString()}</div>
+                                        <div class="file-card-info-value">\${new Date(f.created_at).toLocaleDateString()}</div>
                                     </div>
                                 </div>
                                 <div class="file-card-actions">
@@ -385,8 +395,8 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
             try {
                 const res = await window.apiCall('/api/upload-queue');
                 const d = await res.json();
-                const html = d.queue.map(q => '<tr><td><code>' + q.hash.substring(0, 16) + '...</code></td><td>' + q.filename + '</td><td>' + window.formatBytes(q.size) + '</td><td>' + q.status + '</td><td>' + (q.attempts || 0) + '/' + (q.max_attempts || 3) + '</td><td>' + (q.error_message || '-') + '</td></tr>').join('');
-                document.getElementById('queue-list').innerHTML = html || '<tr><td colspan="6">Queue empty</td></tr>';
+                const html = d.queue.map(q => '<tr><td><code>' + q.hash.substring(0, 16) + '...</code></td><td>' + q.filename + '</td><td>' + (q.title || '-') + '</td><td>' + window.formatBytes(q.size) + '</td><td>' + q.status + '</td><td>' + (q.attempts || 0) + '/' + (q.max_attempts || 3) + '</td><td>' + (q.error_message || '-') + '</td></tr>').join('');
+                document.getElementById('queue-list').innerHTML = html || '<tr><td colspan="7">Queue empty</td></tr>';
             } catch (e) { console.error(e); }
         };
  
@@ -437,7 +447,8 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
         // View File - Video Player Modal
         window.viewFile = async function(hash) {
             try {
-                const res = await window.apiCall('/api/file/' + hash);
+                // No auth needed - endpoint is public
+                const res = await fetch('/api/file/' + hash);
                 const data = await res.json();
                 
                 if (!data.success) {
@@ -446,14 +457,10 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 }
 
                 const file = data.file;
-                let videoSrc = '';
-                let location = '';
+                const downloadUrl = data.download?.url;
 
-                if (file.location === 'sub_instance') {
-                    videoSrc = file.signed_url;
-                    location = 'Sub-Instance: ' + file.sub_instance + ' / ' + file.bucket;
-                } else {
-                    alert('File not yet distributed to sub-instance. It\\'s still in Main R2.');
+                if (!downloadUrl) {
+                    alert('File not yet distributed to sub-instance.');
                     return;
                 }
 
@@ -463,17 +470,21 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 modal.innerHTML = \`
                     <div class="modal-content">
                         <div class="modal-header">
-                            <div class="modal-title">📹 \${file.filename}</div>
+                            <div class="modal-title">📹 \${file.title || file.filename}</div>
                             <button class="modal-close" onclick="document.getElementById('file-modal').remove()">&times;</button>
                         </div>
                         <div class="modal-body">
                             <div class="video-container">
                                 <video class="video-player" controls style="width: 100%; height: auto;">
-                                    <source src="\${videoSrc}" type="video/mp4">
+                                    <source src="\${downloadUrl}" type="video/mp4">
                                     Your browser does not support the video tag.
                                 </video>
                             </div>
                             <div class="file-details">
+                                <div class="detail-row">
+                                    <div class="detail-label">Title:</div>
+                                    <div class="detail-value">\${file.title || '-'}</div>
+                                </div>
                                 <div class="detail-row">
                                     <div class="detail-label">Filename:</div>
                                     <div class="detail-value">\${file.filename}</div>
@@ -492,7 +503,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                                 </div>
                                 <div class="detail-row">
                                     <div class="detail-label">Location:</div>
-                                    <div class="detail-value">\${location}</div>
+                                    <div class="detail-value">\${file.sub_instance || '-'}</div>
                                 </div>
                             </div>
                         </div>
@@ -513,7 +524,8 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
         // Download File
         window.downloadFile = async function(hash, filename) {
             try {
-                const res = await window.apiCall('/api/file/' + hash);
+                // No auth needed - endpoint is public
+                const res = await fetch('/api/file/' + hash);
                 const data = await res.json();
                 
                 if (!data.success) {
@@ -521,10 +533,10 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                     return;
                 }
 
-                const file = data.file;
+                const downloadUrl = data.download?.url;
 
-                if (file.location === 'sub_instance') {
-                    window.open(file.signed_url, '_blank');
+                if (downloadUrl) {
+                    window.open(downloadUrl, '_blank');
                 } else {
                     alert('File not yet distributed. Cannot download.');
                 }
@@ -570,6 +582,12 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
  
                 const formData = new FormData();
                 formData.append('file', file);
+                
+                // ← NEW: Add title if provided
+                const titleInput = document.getElementById('upload-title');
+                if (titleInput && titleInput.value.trim()) {
+                    formData.append('title', titleInput.value.trim());
+                }
  
                 try {
                     const xhr = new XMLHttpRequest();
@@ -585,13 +603,22 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                     });
  
                     xhr.addEventListener('load', () => {
-                        if (xhr.status === 201) {
+                        // ← UPDATED: Handle 202 Accepted status
+                        if (xhr.status === 202 || xhr.status === 200) {
                             const result = JSON.parse(xhr.responseText);
-                            progressItem.classList.add('success');
-                            progressItem.querySelector('.progress-item-status').textContent = '✅ Uploaded! Queued for distribution.';
-                            progressItem.querySelector('.progress-info').innerHTML = '<strong>Hash:</strong> <code style="font-size: 11px;">' + result.hash.substring(0, 24) + '...</code><br><strong>Status:</strong> ' + result.status;
                             
-                            // Auto-load queue after 1 second
+                            // Handle duplicate
+                            if (result.is_duplicate) {
+                                progressItem.classList.add('success');
+                                progressItem.querySelector('.progress-item-status').textContent = '✅ Duplicate! Already in system.';
+                                progressItem.querySelector('.progress-info').innerHTML = '<strong>Title:</strong> ' + (result.title || result.filename) + '<br><strong>Hash:</strong> <code style="font-size: 11px;">' + result.hash.substring(0, 24) + '...</code>';
+                            } else {
+                                progressItem.classList.add('success');
+                                progressItem.querySelector('.progress-item-status').textContent = '✅ Uploaded! Queued for distribution.';
+                                progressItem.querySelector('.progress-info').innerHTML = '<strong>Title:</strong> ' + (result.title || result.filename) + '<br><strong>Hash:</strong> <code style="font-size: 11px;">' + result.hash.substring(0, 24) + '...</code><br><strong>Status:</strong> ' + result.status;
+                            }
+                            
+                            // Auto-load queue and files after 1 second
                             setTimeout(() => {
                                 window.loadQueue();
                                 window.loadFiles();
@@ -617,6 +644,9 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                     progressItem.querySelector('.progress-item-status').textContent = '❌ Error: ' + err.message;
                 }
             }
+            
+            // ← NEW: Clear title input after upload
+            document.getElementById('upload-title').value = '';
         };
  
         document.addEventListener('DOMContentLoaded', function() {
