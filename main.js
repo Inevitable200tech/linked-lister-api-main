@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import fileUpload from 'express-fileupload';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { MainR2, SubInstance, File, UploadQueue } from './utils/schema.js';
+import { MainR2, SubInstance, File, UploadQueue, AuthToken } from './utils/schema.js';
 import dotenv from 'dotenv';
 import { LOGIN_HTML, DASHBOARD_HTML } from './utils/utils.js';
 
@@ -215,6 +215,48 @@ function verifyToken(req, res, next) {
     }
 }
 
+// ============ API TOKEN VERIFICATION (PUBLIC ACCESS) ============
+// Verify API tokens stored in AuthToken collection
+// Tokens can be created in dashboard and shared with external instances
+async function verifyApiToken(req, res, next) {
+    try {
+        // Get token from header: "Bearer token_value"
+        const authHeader = req.headers['authorization'];
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ error: 'Missing or invalid authorization header' });
+        }
+
+        const tokenValue = authHeader.substring(7); // Remove "Bearer "
+
+        // Find token in database
+        const tokenDoc = await AuthToken.findOne({
+            token: tokenValue,
+            status: 'active'
+        });
+
+        if (!tokenDoc) {
+            return res.status(401).json({ error: 'Invalid or revoked token' });
+        }
+
+        // Check expiration if set
+        if (tokenDoc.expires_at && tokenDoc.expires_at < new Date()) {
+            return res.status(401).json({ error: 'Token has expired' });
+        }
+
+        // Update last_used timestamp
+        await AuthToken.updateOne(
+            { token: tokenValue },
+            { last_used: new Date() }
+        );
+
+        // Attach token info to request for logging
+        req.apiToken = tokenDoc;
+        next();
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+}
+
 // ============ UTILITY FUNCTIONS ============
 
 function hashFile(data) {
@@ -230,9 +272,9 @@ async function getSubInstanceSpace(subInstance) {
         const url = `${subInstance.url}/api/status`;
         console.log(`[SPACE-CHECK] 🔍 Checking ${subInstance.node_id}`);
         console.log(`[SPACE-CHECK]    URL: ${url}`);
-        
+
         const response = await axios.get(url, { timeout: 5000 });
-        
+
         console.log(`[SPACE-CHECK] ✅ ${subInstance.node_id} responded`);
         console.log(`[SPACE-CHECK]    Free Space: ${(response.data.stats.total_free_space / 1024 / 1024 / 1024).toFixed(2)} GB`);
 
@@ -253,12 +295,12 @@ async function getSubInstanceSpace(subInstance) {
         return response.data.stats;
     } catch (err) {
         console.error(`[SPACE-CHECK] ❌ ${subInstance.node_id} unreachable: ${err.message}`);
-        
+
         await SubInstance.updateOne(
             { node_id: subInstance.node_id },
             { status: 'inactive' }
         );
-        
+
         return null;
     }
 }
@@ -314,7 +356,7 @@ async function uploadFileToSubInstance(subInstance, fileData, fileName, fileHash
         formData.append('title', title || fileName);
 
         console.log(`[UPLOAD-NODE] ⏳ Sending to node...`);
-        
+
         const response = await axios.post(url, formData, {
             headers: formData.getHeaders(),
             timeout: 30000,
@@ -345,30 +387,30 @@ async function monitorSubInstanceHealth() {
             console.log(`\n[HEARTBEAT] ═══════════════════════════════════════`);
             console.log(`[HEARTBEAT] Health Check at ${timestamp}`);
             console.log(`[HEARTBEAT] ═══════════════════════════════════════`);
-            
+
             const allInstances = await SubInstance.find();
             const activeInstances = await SubInstance.find({ status: 'active' });
-            
+
             console.log(`[HEARTBEAT] 📊 Total: ${allInstances.length} | Active: ${activeInstances.length}`);
-            
+
             if (allInstances.length === 0) {
                 console.log(`[HEARTBEAT] ⚠️  No instances registered yet`);
                 console.log(`[HEARTBEAT] ═══════════════════════════════════════\n`);
                 return;
             }
-            
+
             let successCount = 0;
-            
+
             for (const instance of allInstances) {
                 const data = await getSubInstanceSpace(instance);
                 if (data) {
                     successCount++;
                 }
             }
-            
+
             console.log(`[HEARTBEAT] 📈 Result: ${successCount} healthy, ${allInstances.length - successCount} unreachable`);
             console.log(`[HEARTBEAT] ═══════════════════════════════════════\n`);
-            
+
         } catch (err) {
             console.error('[HEARTBEAT] ❌ Error:', err.message);
         }
@@ -414,13 +456,13 @@ async function processUploadQueue() {
             for (const nodeInfo of suitableNodes) {
                 try {
                     const subInstance = nodeInfo.instance;
-                    
+
                     console.log(`[QUEUE]\n[QUEUE] Attempting upload to: ${subInstance.node_id}`);
-                    
+
                     // Fetch file from Main R2
                     console.log(`[QUEUE] 📥 Fetching file from Main R2...`);
                     const fileBuffer = await fetchFromMainR2(pending.hash);
-                    
+
                     // Upload to sub-instance
                     const uploadResult = await uploadFileToSubInstance(
                         subInstance,
@@ -575,9 +617,9 @@ app.get('/api/dashboard/sub-instances', verifyToken, async (req, res) => {
 app.post('/api/dashboard/sub-instances', verifyToken, async (req, res) => {
     try {
         const { node_id, url } = req.body;
-        
+
         console.log(`[REGISTER] 📝 Registering new sub-instance: ${node_id}`);
-        
+
         if (!node_id || !url) {
             return res.status(400).json({ error: 'node_id and url required' });
         }
@@ -598,7 +640,7 @@ app.post('/api/dashboard/sub-instances', verifyToken, async (req, res) => {
 
         const newInstance = new SubInstance({ node_id, url, status: 'active' });
         await newInstance.save();
-        
+
         console.log(`[REGISTER] ✅ Sub-instance registered\n`);
 
         res.status(201).json({ success: true, instance: newInstance });
@@ -643,6 +685,202 @@ app.get('/api/dashboard/status', verifyToken, async (req, res) => {
         };
 
         res.json({ success: true, stats });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ AUTH TOKEN MANAGEMENT ============
+// Endpoints for creating and managing API tokens for external access
+
+// CREATE NEW API TOKEN
+app.post('/api/dashboard/tokens', verifyToken, async (req, res) => {
+    try {
+        const { name, description, expires_at } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ error: 'Token name is required' });
+        }
+
+        // Generate random token (32 bytes = 64 hex chars)
+        const tokenValue = crypto.randomBytes(32).toString('hex');
+
+        const newToken = new AuthToken({
+            name,
+            token: tokenValue,
+            description: description || '',
+            created_by: 'admin',
+            expires_at: expires_at ? new Date(expires_at) : null,
+            status: 'active'
+        });
+
+        await newToken.save();
+
+        console.log(`[TOKEN] ✅ Created new API token: ${name}`);
+
+        res.status(201).json({
+            success: true,
+            token: {
+                id: newToken._id,
+                name: newToken.name,
+                token: tokenValue,  // Only shown once at creation
+                created_at: newToken.created_at,
+                expires_at: newToken.expires_at,
+                description: newToken.description
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// LIST ALL API TOKENS
+app.get('/api/dashboard/tokens', verifyToken, async (req, res) => {
+    try {
+        const tokens = await AuthToken.find().sort({ created_at: -1 });
+
+        res.json({
+            success: true,
+            total: tokens.length,
+            tokens: tokens.map(t => ({
+                id: t._id,
+                name: t.name,
+                description: t.description,
+                status: t.status,
+                created_at: t.created_at,
+                last_used: t.last_used,
+                expires_at: t.expires_at,
+                created_by: t.created_by,
+                // Don't return actual token value - only shown at creation
+                token_preview: t.token.substring(0, 8) + '...' + t.token.substring(t.token.length - 8)
+            }))
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// REVOKE API TOKEN
+app.delete('/api/dashboard/tokens/:tokenId', verifyToken, async (req, res) => {
+    try {
+        const { tokenId } = req.params;
+
+        const token = await AuthToken.findByIdAndUpdate(
+            tokenId,
+            { status: 'revoked' },
+            { new: true }
+        );
+
+        if (!token) {
+            return res.status(404).json({ error: 'Token not found' });
+        }
+
+        console.log(`[TOKEN] 🔓 Revoked token: ${token.name}`);
+
+        res.json({
+            success: true,
+            message: `Token "${token.name}" has been revoked`,
+            token: {
+                id: token._id,
+                name: token.name,
+                status: token.status
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ PUBLIC API ENDPOINTS ============
+// These endpoints use API tokens for authentication
+// Can be accessed by external systems (scrapers, etc.)
+
+// LIST FILES (PUBLIC - WITH API TOKEN AUTH)
+app.get('/api/public/files', verifyApiToken, async (req, res) => {
+    try {
+        const files = await File.find().sort({ created_at: -1 });
+
+        console.log(`[PUBLIC-API] 📋 Listed ${files.length} files (token: ${req.apiToken.name})`);
+
+        res.json({
+            success: true,
+            total: files.length,
+            files: files.map(f => ({
+                hash: f.hash,
+                filename: f.filename,
+                title: f.title,
+                size: f.size,
+                status: f.status,
+                location: f.locations[0]?.sub_instance || 'Main R2',
+                created_at: f.created_at
+            }))
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET FILE INFO (PUBLIC - WITH API TOKEN AUTH)
+app.get('/api/public/file/:hash', verifyApiToken, async (req, res) => {
+    try {
+        const { hash } = req.params;
+
+        const fileDoc = await File.findOne({ hash });
+        if (!fileDoc) {
+            return res.status(404).json({
+                success: false,
+                error: 'File not found'
+            });
+        }
+
+        console.log(`[PUBLIC-API] 📄 Fetched file info: ${hash.substring(0, 8)}... (token: ${req.apiToken.name})`);
+
+        // File still being processed
+        if (!fileDoc.locations.length) {
+            return res.status(202).json({
+                success: false,
+                error: 'File still being distributed',
+                hash: fileDoc.hash,
+                filename: fileDoc.filename,
+                title: fileDoc.title
+            });
+        }
+
+        // File ready for download
+        const location = fileDoc.locations[0];
+
+        // Generate signed URL from actual location (sub-instance or main R2)
+        let signedUrl = null;
+        try {
+            const getCommand = new GetObjectCommand({
+                Bucket: location.bucket,
+                Key: location.key
+            });
+            signedUrl = await getSignedUrl(r2Client, getCommand, { expiresIn: 3600 });
+        } catch (signErr) {
+            console.error(`[PUBLIC-API] ⚠️  Failed to generate signed URL: ${signErr.message}`);
+        }
+
+        res.json({
+            success: true,
+            file: {
+                hash: fileDoc.hash,
+                filename: fileDoc.filename,
+                title: fileDoc.title,
+                size: fileDoc.size,
+                status: fileDoc.status,
+                location: {
+                    sub_instance: location.sub_instance,
+                    bucket: location.bucket,
+                    key: location.key
+                },
+                created_at: fileDoc.created_at
+            },
+            download: {
+                url: signedUrl,
+                expiresAt: new Date(Date.now() + 3600 * 1000).toISOString()
+            }
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -784,9 +1022,9 @@ app.get('/api/file/:hash', async (req, res) => {
 
         const fileDoc = await File.findOne({ hash });
         if (!fileDoc) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
-                error: 'File not found' 
+                error: 'File not found'
             });
         }
 
@@ -807,9 +1045,9 @@ app.get('/api/file/:hash', async (req, res) => {
         const subInstance = await SubInstance.findOne({ node_id: location.sub_instance });
 
         if (!subInstance) {
-            return res.status(503).json({ 
+            return res.status(503).json({
                 success: false,
-                error: 'Storage node unavailable' 
+                error: 'Storage node unavailable'
             });
         }
 
@@ -817,9 +1055,9 @@ app.get('/api/file/:hash', async (req, res) => {
         const signedUrlData = await getSignedUrlFromSubInstance(subInstance, hash);
 
         if (!signedUrlData) {
-            return res.status(500).json({ 
+            return res.status(500).json({
                 success: false,
-                error: 'Could not get signed URL' 
+                error: 'Could not get signed URL'
             });
         }
 

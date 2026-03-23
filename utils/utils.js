@@ -1,4 +1,4 @@
-export const  DASHBOARD_HTML = `<!DOCTYPE html>
+export const DASHBOARD_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -123,6 +123,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
         <div class="tabs">
             <button class="tab-btn active" data-tab="overview" onclick="window.switchTab('overview')">Overview</button>
             <button class="tab-btn" data-tab="upload" onclick="window.switchTab('upload')">📤 Upload File</button>
+            <button class="tab-btn" data-tab="api-tokens" onclick="window.switchTab('api-tokens')">🔑 API Tokens</button>
             <button class="tab-btn" data-tab="r2-config" onclick="window.switchTab('r2-config')">Main R2</button>
             <button class="tab-btn" data-tab="nodes" onclick="window.switchTab('nodes')">Sub-Instances</button>
             <button class="tab-btn" data-tab="files" onclick="window.switchTab('files')">📁 Files</button>
@@ -193,6 +194,66 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                         <li>📊 Check <strong>Upload Queue</strong> tab to see queue progress</li>
                         <li>📁 Check <strong>Files</strong> tab to see final status and location</li>
                         <li>🔍 Watch server logs for detailed [QUEUE] and [SPACE-CHECK] messages</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+ 
+        <div id="api-tokens" class="tab-content">
+            <div class="section">
+                <h2>🔑 Create API Token</h2>
+                <p style="margin-bottom: 20px; color: #666;">Create tokens for external services (scrapers, etc.) to access the public file API with Bearer token authentication.</p>
+                
+                <div id="token-message"></div>
+
+                <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 10px; color: #34495e;">📋 Token Details</h3>
+                    <form onsubmit="window.createToken(event)">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="token-name">Token Name *</label>
+                                <input type="text" id="token-name" placeholder="e.g., Scraper Instance 1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="token-expires">Expires At (Optional)</label>
+                                <input type="datetime-local" id="token-expires">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="token-description">Description (Optional)</label>
+                            <input type="text" id="token-description" placeholder="e.g., Production video scraper">
+                        </div>
+                        <button type="submit">Create Token</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>📚 Active Tokens</h2>
+                <div id="tokens-list">Loading...</div>
+            </div>
+
+            <div class="section">
+                <h2>💡 How to Use Tokens</h2>
+                <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #27ae60; margin-bottom: 15px;">
+                    <h3 style="margin-bottom: 10px; color: #34495e;">List Files</h3>
+                    <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px;">curl http://localhost:3000/api/public/files \\
+  -H "Authorization: Bearer YOUR_TOKEN"</pre>
+                </div>
+
+                <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #27ae60; margin-bottom: 15px;">
+                    <h3 style="margin-bottom: 10px; color: #34495e;">Get File Details</h3>
+                    <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px;">curl http://localhost:3000/api/public/file/HASH \\
+  -H "Authorization: Bearer YOUR_TOKEN"</pre>
+                </div>
+
+                <div style="background: #fef9e7; padding: 15px; border-radius: 8px; border-left: 4px solid #f39c12;">
+                    <h3 style="margin-bottom: 10px; color: #34495e;">⚠️ Token Security</h3>
+                    <ul style="margin-left: 20px; color: #666;">
+                        <li>✅ Token is only shown once at creation - save it immediately</li>
+                        <li>✅ Store tokens in environment variables (never in code)</li>
+                        <li>✅ Revoke tokens immediately if compromised</li>
+                        <li>✅ Monitor "Last Used" timestamp for suspicious activity</li>
                     </ul>
                 </div>
             </div>
@@ -276,6 +337,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
             const btn = document.querySelector('[data-tab="' + tab + '"]');
             if (btn) btn.classList.add('active');
             if (tab === 'overview') window.loadOverview();
+            if (tab === 'api-tokens') window.loadTokens();
             if (tab === 'r2-config') window.loadMainR2();
             if (tab === 'nodes') window.loadNodes();
             if (tab === 'files') window.loadFiles();
@@ -398,6 +460,144 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
                 const html = d.queue.map(q => '<tr><td><code>' + q.hash.substring(0, 16) + '...</code></td><td>' + q.filename + '</td><td>' + (q.title || '-') + '</td><td>' + window.formatBytes(q.size) + '</td><td>' + q.status + '</td><td>' + (q.attempts || 0) + '/' + (q.max_attempts || 3) + '</td><td>' + (q.error_message || '-') + '</td></tr>').join('');
                 document.getElementById('queue-list').innerHTML = html || '<tr><td colspan="7">Queue empty</td></tr>';
             } catch (e) { console.error(e); }
+        };
+
+        // ============ API TOKEN MANAGEMENT ============
+
+        window.loadTokens = async function() {
+            try {
+                const res = await window.apiCall('/api/dashboard/tokens');
+                const d = await res.json();
+                
+                if (!d.tokens || d.tokens.length === 0) {
+                    document.getElementById('tokens-list').innerHTML = '<p>No API tokens created yet. Create one above to get started.</p>';
+                    return;
+                }
+
+                const html = d.tokens.map(t => {
+                    const status = t.status === 'active' ? '🟢 Active' : '🔴 Revoked';
+                    const statusColor = t.status === 'active' ? '#27ae60' : '#e74c3c';
+                    const expiresAt = t.expires_at ? new Date(t.expires_at).toLocaleDateString() : 'Never';
+                    const lastUsed = t.last_used ? new Date(t.last_used).toLocaleString() : 'Never';
+                    
+                    return \`<div class="card">
+                        <h3>\${t.name}</h3>
+                        <p><span style="display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; background: \${statusColor}; color: white;">\${status}</span></p>
+                        <p><strong>Description:</strong> \${t.description || '(none)'}</p>
+                        <p><strong>Token:</strong> <code>\${t.token_preview}</code> 
+                            <button class="file-card-action-btn" style="padding: 4px 8px; margin-left: 5px; cursor: pointer;" onclick="window.copyToClipboard('\${t.token_preview}')">📋 Copy</button>
+                        </p>
+                        <p><strong>Created:</strong> \${new Date(t.created_at).toLocaleString()}</p>
+                        <p><strong>Last Used:</strong> \${lastUsed}</p>
+                        <p><strong>Expires:</strong> \${expiresAt}</p>
+                        \${t.status === 'active' ?  \`<button class="danger" style="margin-top: 10px; cursor: pointer;" onclick="window.revokeToken('\${t.id}', '\${t.name}')">Revoke Token</button>\` : ''}
+                    </div > \`;
+                }).join('');
+                
+                document.getElementById('tokens-list').innerHTML = html;
+            } catch (e) { 
+                console.error(e);
+                document.getElementById('tokens-list').innerHTML = '<p>Error loading tokens</p>';
+            }
+        };
+
+        window.createToken = async function(e) {
+            e.preventDefault();
+            
+            const name = document.getElementById('token-name').value;
+            const description = document.getElementById('token-description').value;
+            const expiresAtInput = document.getElementById('token-expires').value;
+            
+            if (!name.trim()) {
+                window.showMessage('token-message', 'Token name is required', 'error');
+                return;
+            }
+
+            // Convert datetime-local to ISO string
+            let expiresAt = null;
+            if (expiresAtInput) {
+                expiresAt = new Date(expiresAtInput).toISOString();
+            }
+
+            const data = {
+                name: name.trim(),
+                description: description.trim(),
+                expires_at: expiresAt
+            };
+
+            try {
+                const res = await window.apiCall('/api/dashboard/tokens', { 
+                    method: 'POST', 
+                    body: JSON.stringify(data) 
+                });
+                const result = await res.json();
+
+                if (!res.ok) {
+                    window.showMessage('token-message', result.error || 'Error creating token', 'error');
+                    return;
+                }
+
+                // Show token with copy button
+                const tokenValue = result.token.token;
+                const tokenHtml = \`
+    < div style = "background: #d4edda; padding: 20px; border-radius: 8px; border: 1px solid #c3e6cb;" >
+                        <h3 style="color: #155724; margin-bottom: 15px;">✅ Token Created Successfully!</h3>
+                        <p style="color: #155724; margin-bottom: 10px;"><strong>⚠️ Save this token now - it will not be shown again!</strong></p>
+                        <div style="background: white; padding: 15px; border-radius: 4px; border: 1px solid #bbb; margin-bottom: 15px; word-break: break-all; font-family: monospace; font-size: 12px;">
+                            \${tokenValue}
+                        </div>
+                        <button class="file-card-action-btn" style="cursor: pointer; padding: 10px 20px; background: #27ae60; border-color: #27ae60; color: white; width: auto;" onclick="window.copyTokenValue('\${tokenValue}')">📋 Copy Token</button>
+                        <p style="color: #155724; margin-top: 10px; font-size: 12px;">Use this in your external service with: Authorization: Bearer \${tokenValue.substring(0, 8)}...</p>
+                    </div >
+\`;
+                
+                document.getElementById('token-message').innerHTML = tokenHtml;
+
+                // Reset form
+                document.getElementById('token-name').value = '';
+                document.getElementById('token-description').value = '';
+                document.getElementById('token-expires').value = '';
+
+                // Reload tokens list after 1 second
+                setTimeout(() => window.loadTokens(), 1000);
+            } catch (err) {
+                window.showMessage('token-message', 'Error: ' + err.message, 'error');
+            }
+        };
+
+        window.revokeToken = async function(tokenId, tokenName) {
+            if (!confirm(\`Revoke token "\${tokenName}" ? This action cannot be undone.\`)) return;
+
+            try {
+                const res = await window.apiCall('/api/dashboard/tokens/' + tokenId, { method: 'DELETE' });
+                const d = await res.json();
+
+                if (!res.ok) {
+                    window.showMessage('token-message', d.error || 'Error revoking token', 'error');
+                    return;
+                }
+
+                window.showMessage('token-message', d.message || 'Token revoked successfully', 'success');
+                setTimeout(() => window.loadTokens(), 1000);
+            } catch (err) {
+                window.showMessage('token-message', 'Error: ' + err.message, 'error');
+            }
+        };
+
+        window.copyTokenValue = function(value) {
+            navigator.clipboard.writeText(value).then(() => {
+                alert('✅ Token copied to clipboard!');
+            }).catch(() => {
+                alert('❌ Failed to copy token');
+            });
+        };
+
+        window.copyToClipboard = function(value) {
+            navigator.clipboard.writeText(value).then(() => {
+                alert('✅ Copied to clipboard!');
+            }).catch(() => {
+                alert('❌ Failed to copy');
+            });
         };
  
         window.addMainR2 = async function(e) {
@@ -664,6 +864,7 @@ export const  DASHBOARD_HTML = `<!DOCTYPE html>
     </script>
 </body>
 </html>` ;
+
 
 export const LOGIN_HTML = `<!DOCTYPE html>
 <html lang="en">

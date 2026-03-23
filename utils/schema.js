@@ -2,6 +2,43 @@ import mongoose from 'mongoose';
 
 // ============ SCHEMAS ============
 
+// ============ AUTH TOKEN SCHEMA - FOR PUBLIC API ACCESS ============
+// Tokens created in dashboard can be shared with external instances
+// Each token has: name, token value, creation date, last used, active status
+const authTokenSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: true,           // e.g., "Scraper Instance 1"
+    },
+    token: {
+        type: String,
+        required: true,
+        unique: true,
+        index: true              // Fast token lookup
+    },
+    description: String,          // Optional notes about this token
+    created_at: {
+        type: Date,
+        default: Date.now,
+        index: true
+    },
+    last_used: {
+        type: Date,
+        default: null
+    },
+    status: {
+        type: String,
+        enum: ['active', 'revoked'],
+        default: 'active',
+        index: true
+    },
+    created_by: String,           // Admin username who created it
+    expires_at: {
+        type: Date,
+        default: null             // null = never expires; can set for temporary tokens
+    }
+});
+
 const mainR2Schema = new mongoose.Schema({
     bucket_name: { type: String, required: true, unique: true },
     account_id: String,
@@ -30,33 +67,33 @@ const subInstanceSchema = new mongoose.Schema({
 // Added: title (for external API queries)
 const fileSchema = new mongoose.Schema({
     // Identification (indexed for fast lookup)
-    hash: { 
-        type: String, 
-        required: true, 
-        unique: true, 
-        index: true 
+    hash: {
+        type: String,
+        required: true,
+        unique: true,
+        index: true
     },
-    
+
     // File info
     filename: String,
     title: String,                              // ← NEW: Video title
     size: Number,
-    
+
     // Status (indexed for filtering)
-    status: { 
-        type: String, 
-        enum: ['pending_distribution', 'distributed', 'deleted'], 
+    status: {
+        type: String,
+        enum: ['pending_distribution', 'distributed', 'deleted'],
         default: 'pending_distribution',
-        index: true 
+        index: true
     },
-    
+
     // Temporary location: Main R2 bucket
     main_r2_location: {
         bucket: String,           // R2 bucket name (e.g., "test-bucket")
         key: String               // Object path (e.g., "uploads/a1b2c3d4...")
         // Removed: stored_at (space savings)
     },
-    
+
     // Final location: Sub-instance R2 buckets
     locations: [{
         sub_instance: String,     // Node ID (e.g., "node-1")
@@ -65,14 +102,14 @@ const fileSchema = new mongoose.Schema({
         status: String            // "active" or "inactive"
         // Removed: moved_at (space savings)
     }],
-    
+
     // Single timestamp
-    created_at: { 
-        type: Date, 
+    created_at: {
+        type: Date,
         default: Date.now,
         index: true
     }
-}, { 
+}, {
     minimize: true  // Reduce stored size
 });
 
@@ -87,14 +124,14 @@ const uploadQueueSchema = new mongoose.Schema({
     main_r2_key: String,
     attempts: { type: Number, default: 0 },
     max_attempts: { type: Number, default: 3 },
-    status: { 
-        type: String, 
-        enum: ['pending', 'processing', 'completed', 'failed'], 
-        default: 'pending' 
+    status: {
+        type: String,
+        enum: ['pending', 'processing', 'completed', 'failed'],
+        default: 'pending'
     },
     error_message: String,
-    created_at: { 
-        type: Date, 
+    created_at: {
+        type: Date,
         default: Date.now,
         expire: 604800  // ← Auto-delete after 7 days
     }
@@ -111,6 +148,7 @@ uploadQueueSchema.index({ created_at: 1 }, { expireAfterSeconds: 604800 }); // �
 uploadQueueSchema.index({ status: 1 });
 
 // ============ MODELS ============
+export const AuthToken = mongoose.model('AuthToken', authTokenSchema);
 export const MainR2 = mongoose.model('MainR2', mainR2Schema);
 export const SubInstance = mongoose.model('SubInstance', subInstanceSchema);
 export const File = mongoose.model('File', fileSchema);
