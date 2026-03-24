@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Main System - Dashboard</title>
+    </head>
+
     <style>
         * {
             margin: 0;
@@ -714,97 +716,196 @@
             }
         }
     </style>
-</head>
 
 <body>
-   <div class="container">
-    <header>
-        <h1>🚀 Main System Dashboard</h1>
-        <button class="logout-btn" onclick="window.logout()">🚪 Logout</button>
-    </header>
+    <div class="container">
+        <header>
+            <h1>🚀 Main System Dashboard</h1>
+            <button class="logout-btn" onclick="window.logout()">🚪 Logout</button>
+        </header>
 
-    <div class="tabs">
-        <button class="tab-btn active" data-tab="overview" onclick="window.switchTab('overview')">📊 Overview</button>
-        <button class="tab-btn" data-tab="upload" onclick="window.switchTab('upload')">📤 Upload File</button>
-        <button class="tab-btn" data-tab="api-tokens" onclick="window.switchTab('api-tokens')">🔑 API Tokens</button>
-        <button class="tab-btn" data-tab="r2-config" onclick="window.switchTab('r2-config')">⚙️ Main R2</button>
-        <button class="tab-btn" data-tab="nodes" onclick="window.switchTab('nodes')">🖥️ Sub-Instances</button>
-        <button class="tab-btn" data-tab="files" onclick="window.switchTab('files')">📁 Files</button>
-        <button class="tab-btn" data-tab="queue" onclick="window.switchTab('queue')">📋 Queue</button>
-    </div>
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="overview" onclick="window.switchTab('overview')">📊 Overview</button>
+            <button class="tab-btn" data-tab="upload" onclick="window.switchTab('upload')">📤 Upload File</button>
+            <button class="tab-btn" data-tab="api-tokens" onclick="window.switchTab('api-tokens')">🔑 API Tokens</button>
+            <button class="tab-btn" data-tab="r2-config" onclick="window.switchTab('r2-config')">⚙️ Main R2</button>
+            <button class="tab-btn" data-tab="nodes" onclick="window.switchTab('nodes')">🖥️ Sub-Instances</button>
+            <button class="tab-btn" data-tab="files" onclick="window.switchTab('files')">📁 Files</button>
+            <button class="tab-btn" data-tab="queue" onclick="window.switchTab('queue')">📋 Queue</button>
+        </div>
 
-    <!-- Overview Tab -->
-    <div id="overview" class="tab-content active">
-        <div class="section">
-            <h2>📊 System Status</h2>
-            <div class="stats-grid">
-                <div class="stat-card"><div class="stat-value" id="stat-nodes">0</div><div class="stat-label">Sub-Instances</div></div>
-                <div class="stat-card"><div class="stat-value" id="stat-files">0</div><div class="stat-label">Files</div></div>
-                <div class="stat-card"><div class="stat-value" id="stat-size">0 GB</div><div class="stat-label">Total Size</div></div>
-                <div class="stat-card"><div class="stat-value" id="stat-buckets">0</div><div class="stat-label">R2 Buckets</div></div>
+        <div id="overview" class="tab-content active">
+            <div class="section">
+                <h2>📊 System Status</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-nodes">0</div>
+                        <div class="stat-label">Sub-Instances</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-files">0</div>
+                        <div class="stat-label">Files</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-size">0 GB</div>
+                        <div class="stat-label">Total Size</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-buckets">0</div>
+                        <div class="stat-label">R2 Buckets</div>
+                    </div>
+                </div>
+            </div>
+            <div class="section">
+                <h2>🖥️ Node Usage Summary</h2>
+                <div id="overview-nodes">Loading...</div>
             </div>
         </div>
-        <div class="section">
-            <h2>🖥️ Node Usage Summary</h2>
-            <div id="overview-nodes">Loading...</div>
-        </div>
-    </div>
 
-    <!-- Upload Tab -->
-    <div id="upload" class="tab-content">
-        <div class="section">
-            <h2>📤 Upload File</h2>
-            <p>Upload a video or file to test the distributed storage workflow.</p>
-            <div id="upload-message"></div>
+        <div id="upload" class="tab-content">
+            <div class="section">
+                <h2>📤 Upload File</h2>
+                <p>Upload a video or file to test the distributed storage workflow.</p>
+                <div id="upload-message"></div>
 
-            <div class="form-group">
-                <label for="upload-title">📝 Title (Optional)</label>
-                <input type="text" id="upload-title" placeholder="Give your file a title...">
-            </div>
+                <div class="form-group">
+                    <label for="upload-title">📝 Title (Optional)</label>
+                    <input type="text" id="upload-title" placeholder="Give your file a title...">
+                </div>
 
-            <div class="upload-zone" id="upload-zone" ondrop="window.handleDrop(event)" ondragover="window.handleDragOver(event)" ondragleave="window.handleDragLeave(event)" onclick="document.getElementById('file-input').click()">
-                <div class="upload-zone-text">📁 Drop files here or click to select</div>
-                <div class="upload-zone-hint">Supports video, images, and any file type (Max 1GB)</div>
-            </div>
-            <input type="file" id="file-input" onchange="window.handleFileSelect(event)">
-            <div class="upload-progress" id="upload-progress"></div>
-        </div>
-    </div>
-
-    <!-- API Tokens, Main R2, Nodes, Files Tabs remain the same as before -->
-
-    <!-- Queue Tab - Fixed Responsive Table -->
-    <div id="queue" class="tab-content">
-        <div class="section">
-            <h2>📋 Upload Queue</h2>
-            <div style="overflow-x: auto;">
-                <table class="table" style="min-width: 100%; table-layout: fixed;">
-                    <thead>
-                        <tr>
-                            <th style="width: 18%;">Hash</th>
-                            <th style="width: 10%;">Filename</th>
-                            <th style="width: 18%;">Title</th>
-                            <th style="width: 10%;">Size</th>
-                            <th style="width: 10%;">Status</th>
-                            <th style="width: 8%;">Attempts</th>
-                            <th style="width: 8%;">Message</th>
-                            <th style="width: 8%; text-align: center;">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="queue-list">
-                        <tr><td colspan="8" style="text-align: center; padding: 30px; color: #777;">Loading queue...</td></tr>
-                    </tbody>
-                </table>
+                <div class="upload-zone" id="upload-zone" ondrop="window.handleDrop(event)"
+                    ondragover="window.handleDragOver(event)" ondragleave="window.handleDragLeave(event)"
+                    onclick="document.getElementById('file-input').click()">
+                    <div class="upload-zone-text">📁 Drop files here or click to select</div>
+                    <div class="upload-zone-hint">Supports video, images, and any file type (Max 1GB)</div>
+                </div>
+                <input type="file" id="file-input" onchange="window.handleFileSelect(event)">
+                <div class="upload-progress" id="upload-progress"></div>
             </div>
         </div>
+
+        <div id="api-tokens" class="tab-content">
+            <div class="section">
+                <h2>🔑 Manage API Tokens</h2>
+                <div id="token-message"></div>
+                <form onsubmit="window.createToken(event)">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="token-name">Token Name</label>
+                            <input type="text" id="token-name" placeholder="e.g., Production App" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="token-description">Description (Optional)</label>
+                            <input type="text" id="token-description" placeholder="What is this used for?">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="token-expires">Expiration Date (Optional)</label>
+                        <input type="date" id="token-expires">
+                    </div>
+                    <button type="submit">Create Token</button>
+                </form>
+            </div>
+            <div class="section">
+                <h3>Active Tokens</h3>
+                <div id="tokens-list" class="stats-grid">Loading...</div>
+            </div>
+        </div>
+
+        <div id="r2-config" class="tab-content">
+            <div class="section">
+                <h2>⚙️ Main R2 Configuration</h2>
+                <div id="r2-message"></div>
+                <form onsubmit="window.addMainR2(event)">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="r2-bucket-name">Bucket Name</label>
+                            <input type="text" id="r2-bucket-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="r2-account-id">Account ID</label>
+                            <input type="text" id="r2-account-id" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="r2-access-key">Access Key ID</label>
+                            <input type="text" id="r2-access-key" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="r2-secret-key">Secret Access Key</label>
+                            <input type="password" id="r2-secret-key" required>
+                        </div>
+                    </div>
+                    <button type="submit">Add Configuration</button>
+                </form>
+            </div>
+            <div class="section">
+                <h3>Configured R2 Buckets</h3>
+                <div id="r2-list" class="stats-grid">Loading...</div>
+            </div>
+        </div>
+
+        <div id="nodes" class="tab-content">
+            <div class="section">
+                <h2>🖥️ Manage Sub-Instances</h2>
+                <div id="add-node-message"></div>
+                <form onsubmit="window.addNode(event)">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="node-id">Node ID</label>
+                            <input type="text" id="node-id" placeholder="e.g., node-us-east-1" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="node-url">Node URL</label>
+                            <input type="url" id="node-url" placeholder="https://..." required>
+                        </div>
+                    </div>
+                    <button type="submit">Register Sub-Instance</button>
+                </form>
+            </div>
+            <div class="section">
+                <h3>Registered Nodes</h3>
+                <div id="nodes-list" class="stats-grid">Loading...</div>
+            </div>
+        </div>
+
+        <div id="files" class="tab-content">
+            <div class="section">
+                <h2>📁 Distributed Files</h2>
+                <div id="files-list" class="files-grid">Loading...</div>
+            </div>
+        </div>
+
+        <div id="queue" class="tab-content">
+            <div class="section">
+                <h2>📋 Upload Queue</h2>
+                <div style="overflow-x: auto;">
+                    <table class="table" style="min-width: 100%; table-layout: fixed;">
+                        <thead>
+                            <tr>
+                                <th style="width: 18%;">Hash</th>
+                                <th style="width: 10%;">Filename</th>
+                                <th style="width: 18%;">Title</th>
+                                <th style="width: 10%;">Size</th>
+                                <th style="width: 10%;">Status</th>
+                                <th style="width: 8%;">Attempts</th>
+                                <th style="width: 8%;">Message</th>
+                                <th style="width: 8%; text-align: center;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="queue-list">
+                            <tr>
+                                <td colspan="8" style="text-align: center; padding: 30px; color: #777;">Loading queue...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
-</div>
 
     <script>
         const token = localStorage.getItem("token")
-        if (!token) {
-            window.location.href = "/"
-        }
+        if (!token) window.location.href = "/"
 
         window.logout = function () {
             localStorage.removeItem("token")
@@ -844,7 +945,7 @@
             const res = await fetch(url, { ...opts, headers })
             if (res.status === 401) {
                 localStorage.removeItem("token")
-                window.location.href = ""
+                window.location.href = "/"
                 return null
             }
             return res
@@ -869,42 +970,40 @@
                     const statusColor = percent > 80 ? "#e74c3c" : percent > 50 ? "#f39c12" : "#27ae60"
 
                     return `
-                <div class="card">
-                    <h3>${n.node_id} ${n.status === "active" ? "🟢" : "🔴"}</h3>
-                    <div class="node-stats">
-                        <div class="node-stat-item">
-                            <div class="node-stat-label">Status</div>
-                            <div class="node-stat-value">${n.status}</div>
+                    <div class="card">
+                        <h3>${n.node_id} ${n.status === "active" ? "🟢" : "🔴"}</h3>
+                        <div class="node-stats">
+                            <div class="node-stat-item">
+                                <div class="node-stat-label">Status</div>
+                                <div class="node-stat-value">${n.status}</div>
+                            </div>
+                            <div class="node-stat-item">
+                                <div class="node-stat-label">Files</div>
+                                <div class="node-stat-value">${n.file_count || 0}</div>
+                            </div>
+                            <div class="node-stat-item">
+                                <div class="node-stat-label">Free Space</div>
+                                <div class="node-stat-value">${window.formatBytes(n.free_space || 0)}</div>
+                            </div>
                         </div>
-                        <div class="node-stat-item">
-                            <div class="node-stat-label">Files</div>
-                            <div class="node-stat-value">${n.file_count || 0}</div>
-                        </div>
-                        <div class="node-stat-item">
-                            <div class="node-stat-label">Free Space</div>
-                            <div class="node-stat-value">${window.formatBytes(n.free_space || 0)}</div>
+                        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
+                            <div class="node-stat-label" style="margin-bottom: 8px;">Monthly Transfer Usage</div>
+                            <div class="node-stat-value" style="color: ${statusColor}; margin-bottom: 8px;">
+                                ${used.toFixed(2)} GB / ${limit.toFixed(2)} GB (${percent}%)
+                            </div>
+                            <div class="node-stat-progress">
+                                <div class="node-stat-progress-bar" style="width: ${Math.min(percent, 100)}%; background: ${statusColor};"></div>
+                            </div>
+                            <div style="font-size: 11px; color: #7f8c8d; margin-top: 5px;">
+                                Resets: ${usage.reset_date ? new Date(usage.reset_date).toLocaleDateString() : "N/A"}
+                            </div>
                         </div>
                     </div>
-                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
-                        <div class="node-stat-label" style="margin-bottom: 8px;">Monthly Transfer Usage</div>
-                        <div class="node-stat-value" style="color: ${statusColor}; margin-bottom: 8px;">
-                            ${used.toFixed(2)} GB / ${limit.toFixed(2)} GB (${percent}%)
-                        </div>
-                        <div class="node-stat-progress">
-                            <div class="node-stat-progress-bar" style="width: ${Math.min(percent, 100)}%; background: ${statusColor};"></div>
-                        </div>
-                        <div style="font-size: 11px; color: #7f8c8d; margin-top: 5px;">
-                            Resets: ${usage.reset_date ? new Date(usage.reset_date).toLocaleDateString() : "N/A"}
-                        </div>
-                    </div>
-                </div>
-            `
+                `
                 }).join("")
 
                 document.getElementById("overview-nodes").innerHTML = nodeHtml || "<p>No nodes configured</p>"
-            } catch (e) {
-                console.error(e)
-            }
+            } catch (e) { console.error(e) }
         }
 
         window.loadMainR2 = async function () {
@@ -915,9 +1014,7 @@
                     return `<div class="card"><h3>${b.bucket_name}</h3><p><strong>Account:</strong> ${b.account_id}</p><p><strong>Status:</strong> ${b.status}</p></div>`
                 }).join("")
                 document.getElementById("r2-list").innerHTML = html || "<p>No main R2 buckets configured</p>"
-            } catch (e) {
-                console.error(e)
-            }
+            } catch (e) { console.error(e) }
         }
 
         window.loadNodes = async function () {
@@ -932,28 +1029,26 @@
                     const statusColor = percent > 80 ? "#e74c3c" : percent > 50 ? "#f39c12" : "#27ae60"
 
                     return `
-                <div class="card">
-                    <h3>${n.node_id} <span style="display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; background: ${n.status === "active" ? "#d4edda" : "#f8d7da"}; color: ${n.status === "active" ? "#155724" : "#721c24"};">${n.status.toUpperCase()}</span></h3>
-                    <p><strong>URL:</strong> ${n.url}</p>
-                    <p><strong>Files:</strong> ${n.file_count || 0}</p>
-                    <p><strong>Free Space:</strong> ${window.formatBytes(n.free_space || 0)} / ${window.formatBytes(n.total_space || 0)}</p>
-                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
-                        <div style="font-size: 13px; font-weight: 700; color: #2c3e50; margin-bottom: 8px;">Monthly Transfer Usage</div>
-                        <div style="font-size: 14px; font-weight: 700; color: ${statusColor}; margin-bottom: 8px;">${used.toFixed(2)} GB / ${limit.toFixed(2)} GB (${percent}%)</div>
-                        <div class="node-stat-progress">
-                            <div class="node-stat-progress-bar" style="width: ${Math.min(percent, 100)}%; background: ${statusColor};"></div>
+                    <div class="card">
+                        <h3>${n.node_id} <span style="display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; background: ${n.status === "active" ? "#d4edda" : "#f8d7da"}; color: ${n.status === "active" ? "#155724" : "#721c24"};">${n.status.toUpperCase()}</span></h3>
+                        <p><strong>URL:</strong> ${n.url}</p>
+                        <p><strong>Files:</strong> ${n.file_count || 0}</p>
+                        <p><strong>Free Space:</strong> ${window.formatBytes(n.free_space || 0)} / ${window.formatBytes(n.total_space || 0)}</p>
+                        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
+                            <div style="font-size: 13px; font-weight: 700; color: #2c3e50; margin-bottom: 8px;">Monthly Transfer Usage</div>
+                            <div style="font-size: 14px; font-weight: 700; color: ${statusColor}; margin-bottom: 8px;">${used.toFixed(2)} GB / ${limit.toFixed(2)} GB (${percent}%)</div>
+                            <div class="node-stat-progress">
+                                <div class="node-stat-progress-bar" style="width: ${Math.min(percent, 100)}%; background: ${statusColor};"></div>
+                            </div>
+                            <div style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">${percent > 80 ? "Almost at limit!" : percent > 50 ? "More than half used" : "Well within limit"}</div>
+                            <div style="font-size: 12px; color: #7f8c8d;">Resets: ${usage.reset_date ? new Date(usage.reset_date).toLocaleDateString() : "N/A"}</div>
                         </div>
-                        <div style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">${percent > 80 ? "Almost at limit!" : percent > 50 ? "More than half used" : "Well within limit"}</div>
-                        <div style="font-size: 12px; color: #7f8c8d;">Resets: ${usage.reset_date ? new Date(usage.reset_date).toLocaleDateString() : "N/A"}</div>
+                        <button class="danger" style="margin-top: 10px; width: 100%;" onclick="window.deleteNode('${n.node_id}')">Delete</button>
                     </div>
-                    <button class="danger" style="margin-top: 10px; width: 100%;" onclick="window.deleteNode('${n.node_id}')">Delete</button>
-                </div>
-            `
+                `
                 }).join("")
                 document.getElementById("nodes-list").innerHTML = html
-            } catch (e) {
-                console.error(e)
-            }
+            } catch (e) { console.error(e) }
         }
 
         window.loadFiles = async function () {
@@ -972,37 +1067,37 @@
                     const statusClass = f.status === "distributed" ? "distributed" : "pending"
 
                     return `
-                <div class="file-card">
-                    <div class="file-card-header">
-                        <div class="file-card-title">${f.title || f.filename}</div>
-                        <div class="file-card-subtitle">${f.filename}</div>
-                        <div class="file-card-type">${window.formatBytes(f.size)}</div>
-                    </div>
-                    <div class="file-card-body">
-                        <div style="margin-bottom: 10px;">
-                            <span class="file-card-status ${statusClass}">${f.status.toUpperCase()}</span>
+                    <div class="file-card">
+                        <div class="file-card-header">
+                            <div class="file-card-title">${f.title || f.filename}</div>
+                            <div class="file-card-subtitle">${f.filename}</div>
+                            <div class="file-card-type">${window.formatBytes(f.size)}</div>
                         </div>
-                        <div class="file-card-location">
-                            <div class="file-card-location-label">Location</div>
-                            <div class="file-card-location-value">${location}</div>
-                        </div>
-                        <div class="file-card-info">
-                            <div class="file-card-info-item">
-                                <div class="file-card-info-label">Hash</div>
-                                <div class="file-card-info-value">${f.hash.substring(0, 12)}...</div>
+                        <div class="file-card-body">
+                            <div style="margin-bottom: 10px;">
+                                <span class="file-card-status ${statusClass}">${f.status.toUpperCase()}</span>
                             </div>
-                            <div class="file-card-info-item">
-                                <div class="file-card-info-label">Created</div>
-                                <div class="file-card-info-value">${new Date(f.created_at).toLocaleDateString()}</div>
+                            <div class="file-card-location">
+                                <div class="file-card-location-label">Location</div>
+                                <div class="file-card-location-value">${location}</div>
+                            </div>
+                            <div class="file-card-info">
+                                <div class="file-card-info-item">
+                                    <div class="file-card-info-label">Hash</div>
+                                    <div class="file-card-info-value">${f.hash.substring(0, 12)}...</div>
+                                </div>
+                                <div class="file-card-info-item">
+                                    <div class="file-card-info-label">Created</div>
+                                    <div class="file-card-info-value">${new Date(f.created_at).toLocaleDateString()}</div>
+                                </div>
+                            </div>
+                            <div class="file-card-actions">
+                                ${f.status === "distributed" && isVideo ? `<button class="file-card-action-btn" onclick="window.viewFile('${f.hash}')" style="flex: 1; cursor: pointer;">Play</button>` : ""}
+                                ${f.status === "distributed" ? `<button class="file-card-action-btn download" onclick="window.downloadFile('${f.hash}', '${f.filename}')" style="cursor: pointer;">Download</button>` : `<button class="file-card-action-btn" disabled>Distributing...</button>`}
                             </div>
                         </div>
-                        <div class="file-card-actions">
-                            ${f.status === "distributed" && isVideo ? `<button class="file-card-action-btn" onclick="window.viewFile('${f.hash}')" style="flex: 1; cursor: pointer;">Play</button>` : ""}
-                            ${f.status === "distributed" ? `<button class="file-card-action-btn download" onclick="window.downloadFile('${f.hash}', '${f.filename}')" style="cursor: pointer;">Download</button>` : `<button class="file-card-action-btn" disabled>Distributing...</button>`}
-                        </div>
                     </div>
-                </div>
-            `
+                `
                 }).join("")
 
                 document.getElementById("files-list").innerHTML = html || "<p>No files yet</p>"
@@ -1016,12 +1111,45 @@
             try {
                 const res = await window.apiCall("/api/upload-queue")
                 const d = await res.json()
+
                 const html = d.queue.map(function (q) {
-                    return `<tr><td><code>${q.hash.substring(0, 16)}...</code></td><td>${q.filename}</td><td>${q.title || "-"}</td><td>${window.formatBytes(q.size)}</td><td>${q.status}</td><td>${(q.attempts || 0)}/${(q.max_attempts || 3)}</td><td>${q.error_message || "-"}</td></tr>`
+                    let actionHtml = ''
+                    if (q.status === 'failed') {
+                        actionHtml = `<button onclick="retryFile('${q._id}')" style="padding:4px 8px; background:#f39c12; color:white; border:none; border-radius:4px; cursor:pointer;">Retry</button>`
+                    }
+                    return `<tr>
+                    <td><code>${q.hash.substring(0, 16)}...</code></td>
+                    <td>${q.filename}</td>
+                    <td>${q.title || "-"}</td>
+                    <td>${window.formatBytes(q.size)}</td>
+                    <td>${q.status}</td>
+                    <td>${(q.attempts || 0)}/${(q.max_attempts || 3)}</td>
+                    <td>${q.error_message || "-"}</td>
+                    <td>${actionHtml}</td>
+                </tr>`
                 }).join("")
-                document.getElementById("queue-list").innerHTML = html || "<tr><td colspan=\"7\">Queue empty</td></tr>"
+
+                document.getElementById("queue-list").innerHTML = html || `<tr><td colspan="8" style="text-align:center; padding:20px;">Queue empty</td></tr>`
             } catch (e) {
                 console.error(e)
+            }
+        }
+
+        window.retryFile = async function (id) {
+            if (!confirm("Retry this failed file?")) return
+
+            try {
+                const res = await window.apiCall(`/api/upload-queue/retry/${id}`, { method: 'POST' })
+                const data = await res.json()
+
+                if (data.success) {
+                    alert("File queued for retry!")
+                    window.loadQueue()
+                } else {
+                    alert("Retry failed: " + (data.error || "Unknown error"))
+                }
+            } catch (err) {
+                alert("Error: " + err.message)
             }
         }
 
@@ -1029,36 +1157,34 @@
             try {
                 const res = await window.apiCall("/api/dashboard/tokens")
                 const d = await res.json()
-
-                if (!d.tokens || d.tokens.length === 0) {
-                    document.getElementById("tokens-list").innerHTML = "<p>No API tokens created yet. Create one above to get started.</p>"
-                    return
-                }
-
-                const html = d.tokens.map(function (t) {
-                    const status = t.status === "active" ? "🟢 Active" : "🔴 Revoked"
-                    const statusColor = t.status === "active" ? "#27ae60" : "#e74c3c"
-                    const expiresAt = t.expires_at ? new Date(t.expires_at).toLocaleDateString() : "Never"
-                    const lastUsed = t.last_used ? new Date(t.last_used).toLocaleString() : "Never"
-
-                    return `<div class="card">
-                <h3>${t.name}</h3>
-                <p><span style="display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; background: ${statusColor}; color: white;">${status}</span></p>
-                <p><strong>Description:</strong> ${t.description || "(none)"}</p>
-                <p><strong>Token:</strong> <code>${t.token_preview}</code> 
-                    <button class="file-card-action-btn" style="padding: 4px 8px; margin-left: 5px; cursor: pointer;" onclick="window.copyToClipboard('${t.token_preview}')">Copy</button>
-                </p>
-                <p><strong>Created:</strong> ${new Date(t.created_at).toLocaleString()}</p>
-                <p><strong>Last Used:</strong> ${lastUsed}</p>
-                <p><strong>Expires:</strong> ${expiresAt}</p>
-                ${t.status === "active" ? `<button class="danger" style="margin-top: 10px; cursor: pointer; width: 100%;" onclick="window.revokeToken('${t.id}', '${t.name}')">Revoke Token</button>` : ""}
-            </div>`
+                const el = document.getElementById("tokens-list")
+                if (!el) return
+                if (!d.tokens || d.tokens.length === 0) { el.innerHTML = "<p>No API tokens created yet. Create one above to get started.</p>"; return }
+                
+                const html = d.tokens.map(t => {
+                    return `
+                    <div class="card">
+                        <h3>${t.name}</h3>
+                        <p style="font-size: 14px; margin-bottom: 10px; color: #555;">${t.description || "No description provided."}</p>
+                        <div class="node-stats">
+                            <div class="node-stat-item">
+                                <div class="node-stat-label">Created</div>
+                                <div class="node-stat-value">${new Date(t.created_at).toLocaleDateString()}</div>
+                            </div>
+                            <div class="node-stat-item">
+                                <div class="node-stat-label">Expires</div>
+                                <div class="node-stat-value">${t.expires_at ? new Date(t.expires_at).toLocaleDateString() : 'Never'}</div>
+                            </div>
+                        </div>
+                        <button class="danger" style="margin-top: 15px; width: 100%;" onclick="window.revokeToken('${t._id}', '${t.name}')">Revoke Token</button>
+                    </div>`
                 }).join("")
-
-                document.getElementById("tokens-list").innerHTML = html
+                
+                el.innerHTML = html
             } catch (e) {
                 console.error(e)
-                document.getElementById("tokens-list").innerHTML = "<p>Error loading tokens</p>"
+                const el = document.getElementById("tokens-list")
+                if (el) el.innerHTML = "<p>Error loading tokens</p>"
             }
         }
 
@@ -1075,9 +1201,7 @@
             }
 
             let expiresAt = null
-            if (expiresAtInput) {
-                expiresAt = new Date(expiresAtInput).toISOString()
-            }
+            if (expiresAtInput) expiresAt = new Date(expiresAtInput).toISOString()
 
             const data = {
                 name: name.trim(),
@@ -1086,10 +1210,7 @@
             }
 
             try {
-                const res = await window.apiCall("/api/dashboard/tokens", {
-                    method: "POST",
-                    body: JSON.stringify(data)
-                })
+                const res = await window.apiCall("/api/dashboard/tokens", { method: "POST", body: JSON.stringify(data) })
                 const result = await res.json()
 
                 if (!res.ok) {
@@ -1099,16 +1220,16 @@
 
                 const tokenValue = result.token.token
                 const tokenHtml = `
-            <div style="background: #d4edda; padding: 20px; border-radius: 8px; border: 1px solid #c3e6cb;">
-                <h3 style="color: #155724; margin-bottom: 15px;">Token Created Successfully!</h3>
-                <p style="color: #155724; margin-bottom: 10px;"><strong>Save this token now - it will not be shown again!</strong></p>
-                <div style="background: white; padding: 15px; border-radius: 4px; border: 1px solid #bbb; margin-bottom: 15px; word-break: break-all; font-family: monospace; font-size: 12px; color: #1a1a1a;">
-                    ${tokenValue}
+                <div style="background: #d4edda; padding: 20px; border-radius: 8px; border: 1px solid #c3e6cb;">
+                    <h3 style="color: #155724; margin-bottom: 15px;">Token Created Successfully!</h3>
+                    <p style="color: #155724; margin-bottom: 10px;"><strong>Save this token now - it will not be shown again!</strong></p>
+                    <div style="background: white; padding: 15px; border-radius: 4px; border: 1px solid #bbb; margin-bottom: 15px; word-break: break-all; font-family: monospace; font-size: 12px; color: #1a1a1a;">
+                        ${tokenValue}
+                    </div>
+                    <button class="file-card-action-btn" style="cursor: pointer; padding: 10px 20px; background: #27ae60; border-color: #27ae60; color: white; width: auto;" onclick="window.copyTokenValue('${tokenValue}')">Copy Token</button>
+                    <p style="color: #155724; margin-top: 10px; font-size: 12px;">Use this in your external service with: Authorization: Bearer ${tokenValue.substring(0, 8)}...</p>
                 </div>
-                <button class="file-card-action-btn" style="cursor: pointer; padding: 10px 20px; background: #27ae60; border-color: #27ae60; color: white; width: auto;" onclick="window.copyTokenValue('${tokenValue}')">Copy Token</button>
-                <p style="color: #155724; margin-top: 10px; font-size: 12px;">Use this in your external service with: Authorization: Bearer ${tokenValue.substring(0, 8)}...</p>
-            </div>
-        `
+            `
 
                 document.getElementById("token-message").innerHTML = tokenHtml
 
@@ -1238,47 +1359,47 @@
                 modal.className = "modal active"
                 modal.id = "file-modal"
                 modal.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-header">
-                    <div class="modal-title">Video ${file.title || file.filename}</div>
-                    <button class="modal-close" onclick="document.getElementById('file-modal').remove()">×</button>
-                </div>
-                <div class="modal-body">
-                    <div class="video-container">
-                        <video class="video-player" controls style="width: 100%; height: auto;">
-                            <source src="${downloadUrl}" type="video/mp4">
-                            Your browser does not support the video tag.
-                        </video>
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div class="modal-title">Video ${file.title || file.filename}</div>
+                        <button class="modal-close" onclick="document.getElementById('file-modal').remove()">×</button>
                     </div>
-                    <div class="file-details">
-                        <div class="detail-row">
-                            <div class="detail-label">Title:</div>
-                            <div class="detail-value">${file.title || "-"}</div>
+                    <div class="modal-body">
+                        <div class="video-container">
+                            <video class="video-player" controls style="width: 100%; height: auto;">
+                                <source src="${downloadUrl}" type="video/mp4">
+                                Your browser does not support the video tag.
+                            </video>
                         </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Filename:</div>
-                            <div class="detail-value">${file.filename}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Hash:</div>
-                            <div class="detail-value"><code>${file.hash}</code></div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Size:</div>
-                            <div class="detail-value">${window.formatBytes(file.size)}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Status:</div>
-                            <div class="detail-value">${file.status}</div>
-                        </div>
-                        <div class="detail-row">
-                            <div class="detail-label">Location:</div>
-                            <div class="detail-value">${file.sub_instance || "-"}</div>
+                        <div class="file-details">
+                            <div class="detail-row">
+                                <div class="detail-label">Title:</div>
+                                <div class="detail-value">${file.title || "-"}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Filename:</div>
+                                <div class="detail-value">${file.filename}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Hash:</div>
+                                <div class="detail-value"><code>${file.hash}</code></div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Size:</div>
+                                <div class="detail-value">${window.formatBytes(file.size)}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Status:</div>
+                                <div class="detail-value">${file.status}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Location:</div>
+                                <div class="detail-value">${file.sub_instance || "-"}</div>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        `
+            `
 
                 document.body.appendChild(modal)
 
@@ -1333,54 +1454,7 @@
             const files = e.target.files
             if (files.length > 0) window.handleFiles(files)
         }
-        // In dashboard.js - update loadQueue function
-        window.loadQueue = async function () {
-            try {
-                const res = await window.apiCall("/api/upload-queue");
-                const d = await res.json();
 
-                const html = d.queue.map(function (q) {
-                    let actionHtml = '';
-                    if (q.status === 'failed') {
-                        actionHtml = `<button onclick="retryFile('${q._id}')" style="padding:4px 8px; background:#f39c12; color:white; border:none; border-radius:4px; cursor:pointer;">Retry</button>`;
-                    }
-
-                    return `<tr>
-                <td><code>${q.hash.substring(0, 16)}...</code></td>
-                <td>${q.filename}</td>
-                <td>${q.title || "-"}</td>
-                <td>${window.formatBytes(q.size)}</td>
-                <td>${q.status}</td>
-                <td>${(q.attempts || 0)}/${(q.max_attempts || 3)}</td>
-                <td>${q.error_message || "-"}</td>
-                <td>${actionHtml}</td>
-            </tr>`;
-                }).join("");
-
-                document.getElementById("queue-list").innerHTML = html || "<tr><td colspan='8'>Queue empty</td></tr>";
-            } catch (e) {
-                console.error(e);
-            }
-        };
-
-        // New retry function
-        window.retryFile = async function (id) {
-            if (!confirm("Retry this failed file?")) return;
-
-            try {
-                const res = await window.apiCall(`/api/upload-queue/retry/${id}`, { method: 'POST' });
-                const data = await res.json();
-
-                if (data.success) {
-                    alert("File queued for retry!");
-                    window.loadQueue();   // refresh table
-                } else {
-                    alert("Retry failed: " + (data.error || "Unknown error"));
-                }
-            } catch (err) {
-                alert("Error: " + err.message);
-            }
-        };
         window.handleFiles = async function (files) {
             const progressDiv = document.getElementById("upload-progress")
             progressDiv.innerHTML = ""
@@ -1421,11 +1495,9 @@
                             if (result.is_duplicate) {
                                 progressItem.classList.add("success")
                                 progressItem.querySelector(".progress-item-status").textContent = "Duplicate! Already in system."
-                                progressItem.querySelector(".progress-info").innerHTML = `<strong>Title:</strong> ${result.title || result.filename}<br><strong>Hash:</strong> <code style="font-size: 11px;">${result.hash.substring(0, 24)}...</code>`
                             } else {
                                 progressItem.classList.add("success")
                                 progressItem.querySelector(".progress-item-status").textContent = "Uploaded! Queued for distribution."
-                                progressItem.querySelector(".progress-info").innerHTML = `<strong>Title:</strong> ${result.title || result.filename}<br><strong>Hash:</strong> <code style="font-size: 11px;">${result.hash.substring(0, 24)}...</code><br><strong>Status:</strong> ${result.status}`
                             }
 
                             setTimeout(function () {
@@ -1457,18 +1529,8 @@
             document.getElementById("upload-title").value = ""
         }
 
-        document.addEventListener("DOMContentLoaded", function () {
-            const tabButtons = document.querySelectorAll("[data-tab]")
-            tabButtons.forEach(function (btn) {
-                btn.addEventListener("click", function (e) { window.switchTab(e.target.dataset.tab) })
-            })
-        })
-
         window.loadOverview()
-        setInterval(function () {
-            window.loadQueue()
-            window.loadFiles()
-        }, 3000)
+        setInterval(() => { window.loadQueue(); window.loadFiles() }, 3000)
     </script>
 </body>
 

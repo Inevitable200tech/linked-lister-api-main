@@ -1,4 +1,3 @@
-
 import axios from 'axios';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -8,8 +7,6 @@ import dotenv from 'dotenv';
 
 
 dotenv.config({ path: "cert.env" });
-
-
 
 
 const JWT_SECRET = process.env.JWT_SECRET || 'main-secret-key-change-in-production';
@@ -442,6 +439,16 @@ async function uploadFileToSubInstance(subInstance, fileData, fileName, fileHash
 
         return response.data;
     } catch (err) {
+        // If 409 Conflict is returned, it means the file is already on the sub-instance.
+        if (err.response && err.response.status === 409) {
+            console.log(`[UPLOAD-NODE] ⚠️  File already exists on ${subInstance.node_id} (409 Conflict). Treating as success.`);
+            return {
+                isDuplicate: true,
+                bucket: err.response.data?.bucket || 'uploads', // Fallback if API doesn't return bucket info
+                key: err.response.data?.key || `uploads/${fileHash}`, // Fallback if API doesn't return key info
+                ...err.response.data
+            };
+        }
         console.error(`[UPLOAD-NODE] ❌ Upload failed to ${subInstance.node_id}: ${err.message}`);
         return null;
     }
@@ -531,7 +538,7 @@ async function processUploadQueue() {
 
                     console.log(`[QUEUE]\n[QUEUE] Attempting upload to: ${subInstance.node_id}`);
 
-                    // ← NEW: Check monthly transfer limit before uploading
+                    // Check monthly transfer limit before uploading
                     const limitCheck = await checkMonthlyTransferLimit(subInstance, pending.size);
                     
                     if (!limitCheck.allowed) {
@@ -559,10 +566,13 @@ async function processUploadQueue() {
                         continue;
                     }
 
-                    console.log(`[QUEUE] ✅ Upload succeeded to ${subInstance.node_id}`);
-
-                    // ← NEW: Update monthly transfer usage
-                    await updateMonthlyTransferUsage(subInstance.node_id, pending.size);
+                    if (uploadResult.isDuplicate) {
+                        console.log(`[QUEUE] ✅ File already exists on ${subInstance.node_id}. Skipping bandwidth deduction.`);
+                    } else {
+                        console.log(`[QUEUE] ✅ Upload succeeded to ${subInstance.node_id}`);
+                        // Update monthly transfer usage
+                        await updateMonthlyTransferUsage(subInstance.node_id, pending.size);
+                    }
 
                     // Update file metadata with new location
                     await File.updateOne(
