@@ -424,7 +424,7 @@ app.get('/api/public/file/:hash', verifyApiToken, async (req, res) => {
         console.log(`[PUBLIC-API] 📄 Fetched file info: ${hash.substring(0, 8)}... (token: ${req.apiToken.name})`);
 
         // File still being processed
-        if (!fileDoc.locations.length) {
+        if (!fileDoc.locations || !fileDoc.locations.length) {
             return res.status(202).json({
                 success: false,
                 error: 'File still being distributed',
@@ -436,18 +436,17 @@ app.get('/api/public/file/:hash', verifyApiToken, async (req, res) => {
 
         // File ready for download
         const location = fileDoc.locations[0];
+        const subInstance = await SubInstance.findOne({ node_id: location.sub_instance });
 
-        // Generate signed URL from actual location (sub-instance or main R2)
-        let signedUrl = null;
-        try {
-            const getCommand = new GetObjectCommand({
-                Bucket: location.bucket,
-                Key: location.key
+        if (!subInstance) {
+            return res.status(503).json({
+                success: false,
+                error: 'Storage node unavailable'
             });
-            signedUrl = await getSignedUrl(r2Client, getCommand, { expiresIn: 3600 });
-        } catch (signErr) {
-            console.error(`[PUBLIC-API] ⚠️  Failed to generate signed URL: ${signErr.message}`);
         }
+
+        // Generate signed URL from the sub-instance (FIXED)
+        const signedUrlData = await getSignedUrlFromSubInstance(subInstance, hash);
 
         res.json({
             success: true,
@@ -465,8 +464,8 @@ app.get('/api/public/file/:hash', verifyApiToken, async (req, res) => {
                 created_at: fileDoc.created_at
             },
             download: {
-                url: signedUrl,
-                expiresAt: new Date(Date.now() + 3600 * 1000).toISOString()
+                url: signedUrlData ? signedUrlData.signed_url : null,
+                expiresAt: signedUrlData ? signedUrlData.expires_at : null
             }
         });
     } catch (err) {
