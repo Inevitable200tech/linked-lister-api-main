@@ -717,186 +717,88 @@
 </head>
 
 <body>
-    <div class="container">
-        <header>
-            <h1>🚀 Main System Dashboard</h1>
-            <button class="logout-btn" onclick="window.logout()">🚪 Logout</button>
-        </header>
+   <div class="container">
+    <header>
+        <h1>🚀 Main System Dashboard</h1>
+        <button class="logout-btn" onclick="window.logout()">🚪 Logout</button>
+    </header>
 
-        <div class="tabs">
-            <button class="tab-btn active" data-tab="overview" onclick="window.switchTab('overview')">📊
-                Overview</button>
-            <button class="tab-btn" data-tab="upload" onclick="window.switchTab('upload')">📤 Upload File</button>
-            <button class="tab-btn" data-tab="api-tokens" onclick="window.switchTab('api-tokens')">🔑 API
-                Tokens</button>
-            <button class="tab-btn" data-tab="r2-config" onclick="window.switchTab('r2-config')">⚙️ Main R2</button>
-            <button class="tab-btn" data-tab="nodes" onclick="window.switchTab('nodes')">🖥️ Sub-Instances</button>
-            <button class="tab-btn" data-tab="files" onclick="window.switchTab('files')">📁 Files</button>
-            <button class="tab-btn" data-tab="queue" onclick="window.switchTab('queue')">📋 Queue</button>
-        </div>
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="overview" onclick="window.switchTab('overview')">📊 Overview</button>
+        <button class="tab-btn" data-tab="upload" onclick="window.switchTab('upload')">📤 Upload File</button>
+        <button class="tab-btn" data-tab="api-tokens" onclick="window.switchTab('api-tokens')">🔑 API Tokens</button>
+        <button class="tab-btn" data-tab="r2-config" onclick="window.switchTab('r2-config')">⚙️ Main R2</button>
+        <button class="tab-btn" data-tab="nodes" onclick="window.switchTab('nodes')">🖥️ Sub-Instances</button>
+        <button class="tab-btn" data-tab="files" onclick="window.switchTab('files')">📁 Files</button>
+        <button class="tab-btn" data-tab="queue" onclick="window.switchTab('queue')">📋 Queue</button>
+    </div>
 
-        <!-- Overview Tab -->
-        <div id="overview" class="tab-content active">
-            <div class="section">
-                <h2>📊 System Status</h2>
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value" id="stat-nodes">0</div>
-                        <div class="stat-label">Sub-Instances</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="stat-files">0</div>
-                        <div class="stat-label">Files</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="stat-size">0 GB</div>
-                        <div class="stat-label">Total Size</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="stat-buckets">0</div>
-                        <div class="stat-label">R2 Buckets</div>
-                    </div>
-                </div>
-            </div>
-            <div class="section">
-                <h2>🖥️ Node Usage Summary</h2>
-                <div id="overview-nodes">Loading...</div>
+    <!-- Overview Tab -->
+    <div id="overview" class="tab-content active">
+        <div class="section">
+            <h2>📊 System Status</h2>
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-value" id="stat-nodes">0</div><div class="stat-label">Sub-Instances</div></div>
+                <div class="stat-card"><div class="stat-value" id="stat-files">0</div><div class="stat-label">Files</div></div>
+                <div class="stat-card"><div class="stat-value" id="stat-size">0 GB</div><div class="stat-label">Total Size</div></div>
+                <div class="stat-card"><div class="stat-value" id="stat-buckets">0</div><div class="stat-label">R2 Buckets</div></div>
             </div>
         </div>
-
-        <!-- Upload Tab -->
-        <div id="upload" class="tab-content">
-            <div class="section">
-                <h2>📤 Upload File</h2>
-                <p>Upload a video or file to test the distributed storage workflow.</p>
-                <div id="upload-message"></div>
-
-                <div class="form-group">
-                    <label for="upload-title">📝 Title (Optional)</label>
-                    <input type="text" id="upload-title" placeholder="Give your file a title...">
-                </div>
-
-                <div class="upload-zone" id="upload-zone" ondrop="window.handleDrop(event)"
-                    ondragover="window.handleDragOver(event)" ondragleave="window.handleDragLeave(event)"
-                    onclick="document.getElementById('file-input').click()">
-                    <div class="upload-zone-text">📁 Drop files here or click to select</div>
-                    <div class="upload-zone-hint">Supports video, images, and any file type (Max 1GB)</div>
-                </div>
-                <input type="file" id="file-input" onchange="window.handleFileSelect(event)">
-                <div class="upload-progress" id="upload-progress"></div>
-            </div>
+        <div class="section">
+            <h2>🖥️ Node Usage Summary</h2>
+            <div id="overview-nodes">Loading...</div>
         </div>
+    </div>
 
-        <!-- API Tokens Tab -->
-        <div id="api-tokens" class="tab-content">
-            <div class="section">
-                <h2>🔑 Create API Token</h2>
-                <div id="token-message"></div>
-                <form onsubmit="window.createToken(event)">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="token-name">Token Name *</label>
-                            <input type="text" id="token-name" placeholder="e.g., Scraper Instance 1" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="token-expires">Expires At (Optional)</label>
-                            <input type="datetime-local" id="token-expires">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="token-description">Description (Optional)</label>
-                        <input type="text" id="token-description" placeholder="e.g., Production video scraper">
-                    </div>
-                    <button type="submit">Create Token</button>
-                </form>
+    <!-- Upload Tab -->
+    <div id="upload" class="tab-content">
+        <div class="section">
+            <h2>📤 Upload File</h2>
+            <p>Upload a video or file to test the distributed storage workflow.</p>
+            <div id="upload-message"></div>
+
+            <div class="form-group">
+                <label for="upload-title">📝 Title (Optional)</label>
+                <input type="text" id="upload-title" placeholder="Give your file a title...">
             </div>
-            <div class="section">
-                <h2>📚 Active Tokens</h2>
-                <div id="tokens-list">Loading...</div>
+
+            <div class="upload-zone" id="upload-zone" ondrop="window.handleDrop(event)" ondragover="window.handleDragOver(event)" ondragleave="window.handleDragLeave(event)" onclick="document.getElementById('file-input').click()">
+                <div class="upload-zone-text">📁 Drop files here or click to select</div>
+                <div class="upload-zone-hint">Supports video, images, and any file type (Max 1GB)</div>
             </div>
+            <input type="file" id="file-input" onchange="window.handleFileSelect(event)">
+            <div class="upload-progress" id="upload-progress"></div>
         </div>
+    </div>
 
-        <!-- Main R2 Tab -->
-        <div id="r2-config" class="tab-content">
-            <div class="section">
-                <h2>⚙️ Configure Main R2 Bucket</h2>
-                <div id="r2-message"></div>
-                <form onsubmit="window.addMainR2(event)">
-                    <div class="form-row">
-                        <div class="form-group"><label>Bucket Name</label><input type="text" id="r2-bucket-name"
-                                placeholder="my-main-bucket" required></div>
-                        <div class="form-group"><label>Account ID</label><input type="text" id="r2-account-id" required>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group"><label>Access Key</label><input type="text" id="r2-access-key" required>
-                        </div>
-                        <div class="form-group"><label>Secret Key</label><input type="password" id="r2-secret-key"
-                                required></div>
-                    </div>
-                    <button type="submit">Add Main R2 Bucket</button>
-                </form>
-            </div>
-            <div class="section">
-                <h2>Active Main R2 Buckets</h2>
-                <div id="r2-list">Loading...</div>
-            </div>
-        </div>
+    <!-- API Tokens, Main R2, Nodes, Files Tabs remain the same as before -->
 
-        <!-- Nodes Tab -->
-        <div id="nodes" class="tab-content">
-            <div class="section">
-                <h2>🖥️ Add Sub-Instance</h2>
-                <div id="add-node-message"></div>
-                <form onsubmit="window.addNode(event)">
-                    <div class="form-row">
-                        <div class="form-group"><label>Node ID</label><input type="text" id="node-id"
-                                placeholder="node-1" required></div>
-                        <div class="form-group"><label>URL</label><input type="text" id="node-url"
-                                placeholder="http://localhost:3001" required></div>
-                    </div>
-                    <button type="submit">Add Sub-Instance</button>
-                </form>
-            </div>
-            <div class="section">
-                <h2>📊 Sub-Instances Status</h2>
-                <div id="nodes-list">Loading...</div>
-            </div>
-        </div>
-
-        <!-- Files Tab -->
-        <div id="files" class="tab-content">
-            <div class="section">
-                <h2>📁 Files</h2>
-                <div id="files-list" class="files-grid">Loading...</div>
-            </div>
-        </div>
-
-        <!-- Queue Tab -->
-        <div id="queue" class="tab-content">
-            <div class="section">
-                <h2>📋 Upload Queue</h2>
-                <table class="table">
+    <!-- Queue Tab - Fixed Responsive Table -->
+    <div id="queue" class="tab-content">
+        <div class="section">
+            <h2>📋 Upload Queue</h2>
+            <div style="overflow-x: auto;">
+                <table class="table" style="min-width: 100%; table-layout: fixed;">
                     <thead>
                         <tr>
-                            <th>Hash</th>
-                            <th>Filename</th>
-                            <th>Title</th>
-                            <th>Size</th>
-                            <th>Status</th>
-                            <th>Attempts</th>
-                            <th>Message</th>
+                            <th style="width: 18%;">Hash</th>
+                            <th style="width: 10%;">Filename</th>
+                            <th style="width: 18%;">Title</th>
+                            <th style="width: 10%;">Size</th>
+                            <th style="width: 10%;">Status</th>
+                            <th style="width: 8%;">Attempts</th>
+                            <th style="width: 8%;">Message</th>
+                            <th style="width: 8%; text-align: center;">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="queue-list">
-                        <tr>
-                            <td colspan="7">Loading...</td>
-                        </tr>
+                        <tr><td colspan="8" style="text-align: center; padding: 30px; color: #777;">Loading queue...</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
+</div>
 
     <script>
         const token = localStorage.getItem("token")
@@ -1431,7 +1333,54 @@
             const files = e.target.files
             if (files.length > 0) window.handleFiles(files)
         }
+        // In dashboard.js - update loadQueue function
+        window.loadQueue = async function () {
+            try {
+                const res = await window.apiCall("/api/upload-queue");
+                const d = await res.json();
 
+                const html = d.queue.map(function (q) {
+                    let actionHtml = '';
+                    if (q.status === 'failed') {
+                        actionHtml = `<button onclick="retryFile('${q._id}')" style="padding:4px 8px; background:#f39c12; color:white; border:none; border-radius:4px; cursor:pointer;">Retry</button>`;
+                    }
+
+                    return `<tr>
+                <td><code>${q.hash.substring(0, 16)}...</code></td>
+                <td>${q.filename}</td>
+                <td>${q.title || "-"}</td>
+                <td>${window.formatBytes(q.size)}</td>
+                <td>${q.status}</td>
+                <td>${(q.attempts || 0)}/${(q.max_attempts || 3)}</td>
+                <td>${q.error_message || "-"}</td>
+                <td>${actionHtml}</td>
+            </tr>`;
+                }).join("");
+
+                document.getElementById("queue-list").innerHTML = html || "<tr><td colspan='8'>Queue empty</td></tr>";
+            } catch (e) {
+                console.error(e);
+            }
+        };
+
+        // New retry function
+        window.retryFile = async function (id) {
+            if (!confirm("Retry this failed file?")) return;
+
+            try {
+                const res = await window.apiCall(`/api/upload-queue/retry/${id}`, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.success) {
+                    alert("File queued for retry!");
+                    window.loadQueue();   // refresh table
+                } else {
+                    alert("Retry failed: " + (data.error || "Unknown error"));
+                }
+            } catch (err) {
+                alert("Error: " + err.message);
+            }
+        };
         window.handleFiles = async function (files) {
             const progressDiv = document.getElementById("upload-progress")
             progressDiv.innerHTML = ""

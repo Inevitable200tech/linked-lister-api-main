@@ -80,6 +80,33 @@ app.get('/api/main-r2', verifyToken, async (req, res) => {
     }
 });
 
+app.post('/api/upload-queue/retry/:id', verifyToken, async (req, res) => {
+    try {
+        const queueItem = await UploadQueue.findById(req.params.id);
+        if (!queueItem) return res.status(404).json({ error: 'Queue item not found' });
+
+        if (queueItem.status !== 'failed') {
+            return res.status(400).json({ error: 'Only failed items can be retried' });
+        }
+
+        // Reset to pending
+        await UploadQueue.updateOne(
+            { _id: queueItem._id },
+            { 
+                status: 'pending',
+                attempts: 0,
+                error_message: null 
+            }
+        );
+
+        console.log(`[RETRY] ✅ Retried failed file: ${queueItem.hash}`);
+
+        res.json({ success: true, message: 'File queued for retry' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post('/api/main-r2', verifyToken, async (req, res) => {
     try {
         const { bucket_name, account_id, access_key_id, secret_access_key, endpoint } = req.body;
