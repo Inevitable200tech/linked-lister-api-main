@@ -1,0 +1,58 @@
+{
+    "compilerOptions": {
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "target": "ES2024",
+        "jsx": "react-jsx",
+        "allowImportingTsExtensions": true,
+        
+        // ===== STRICT TYPE CHECKING =====
+        "strict": true,
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "strictBindCallApply": true,
+        "strictPropertyInitialization": true,
+        "noImplicitAny": true,
+        "alwaysStrict": true,
+        
+        // ===== ERROR REPORTING =====
+        "noImplicitThis": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUncheckedIndexedAccess": true,
+        "noImplicitOverride": true,
+        "exactOptionalPropertyTypes": true,
+        
+        // ===== DEBUGGING & DIAGNOSTICS =====
+        "sourceMap": true,
+        "inlineSources": true,
+        "declaration": true,
+        "declarationMap": true,
+        "pretty": true,
+        
+        // ===== MODULE RESOLUTION =====
+        "esModuleInterop": true,
+        "resolveJsonModule": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "lib": ["ES2024"],
+        
+        // ===== ADDITIONAL DIAGNOSTICS =====
+        "allowUnusedLabels": false,
+        "allowUnreachableCode": false
+    },
+    "include": [
+        "**/*.js",
+        "**/*.jsx"
+    ],
+    "exclude": [
+        "node_modules",
+        "**/node_modules/*",
+        "dist",
+        "build",
+        ".git",
+        ".next"
+    ]
+}

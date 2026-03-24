@@ -1,38 +1,24 @@
 import mongoose from 'mongoose';
 
 // ============ SCHEMAS ============
+
 const authTokenSchema = new mongoose.Schema({
-    name: {
-        type: String,
-        required: true,           // e.g., "Scraper Instance 1"
-    },
+    name: { type: String, required: true },
     token: {
         type: String,
         required: true,
-        unique: true,
-        index: true              // Fast token lookup
+        unique: true
     },
-    description: String,          // Optional notes about this token
-    created_at: {
-        type: Date,
-        default: Date.now,
-        index: true
-    },
-    last_used: {
-        type: Date,
-        default: null
-    },
+    description: String,
+    created_at: { type: Date, default: Date.now },
+    last_used: { type: Date, default: null },
     status: {
         type: String,
         enum: ['active', 'revoked'],
-        default: 'active',
-        index: true
+        default: 'active'
     },
-    created_by: String,           // Admin username who created it
-    expires_at: {
-        type: Date,
-        default: null             // null = never expires; can set for temporary tokens
-    }
+    created_by: String,
+    expires_at: { type: Date, default: null }
 });
 
 const mainR2Schema = new mongoose.Schema({
@@ -54,93 +40,70 @@ const subInstanceSchema = new mongoose.Schema({
     file_count: { type: Number, default: 0 },
     last_heartbeat: { type: Date, default: null },
     r2_buckets: { type: Number, default: 0 },
-    
-    // ← NEW: Monthly transfer tracking (10GB limit per month)
+
     monthly_transfer: {
         current_month: {
             type: String,
-            default: () => new Date().toISOString().slice(0, 7)  // "2025-03"
+            default: () => new Date().toISOString().slice(0, 7)
         },
-        data_transferred: {
-            type: Number,
-            default: 0                     // Bytes transferred this month
-        },
-        limit_bytes: {
-            type: Number,
-            default: 10 * 1024 * 1024 * 1024  // 10GB in bytes
-        },
+        data_transferred: { type: Number, default: 0 },
+        limit_bytes: { type: Number, default: 10 * 1024 * 1024 * 1024 },
         reset_date: {
             type: Date,
             default: () => {
                 const now = new Date();
-                const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-                return nextMonth;
+                return new Date(now.getFullYear(), now.getMonth() + 1, 1);
             }
         }
     },
-    
     created_at: { type: Date, default: Date.now }
 });
 
-// ============ UPDATED FILE SCHEMA - WITH TITLE SUPPORT ============
-// Files stored in R2, only metadata in MongoDB
-// Removed: stored_at, moved_at (space savings ~50%)
-// Added: title (for external API queries)
+// ============ FILE SCHEMA ============
 const fileSchema = new mongoose.Schema({
-    // Identification (indexed for fast lookup)
     hash: {
         type: String,
         required: true,
-        unique: true,
-        index: true
+        unique: true
+        // ← REMOVED: index: true
     },
-
-    // File info
     filename: String,
-    title: String,                              // ← NEW: Video title
+    title: String,
     size: Number,
 
-    // Status (indexed for filtering)
     status: {
         type: String,
         enum: ['pending_distribution', 'distributed', 'deleted'],
-        default: 'pending_distribution',
-        index: true
+        default: 'pending_distribution'
+        // ← REMOVED: index: true
     },
 
-    // Temporary location: Main R2 bucket
     main_r2_location: {
-        bucket: String,           // R2 bucket name (e.g., "test-bucket")
-        key: String               // Object path (e.g., "uploads/a1b2c3d4...")
-        // Removed: stored_at (space savings)
+        bucket: String,
+        key: String
     },
 
-    // Final location: Sub-instance R2 buckets
     locations: [{
-        sub_instance: String,     // Node ID (e.g., "node-1")
-        bucket: String,           // Sub-instance bucket (e.g., "my-bucket")
-        key: String,              // Object path (e.g., "node-1/a1b2c3d4...")
-        status: String            // "active" or "inactive"
-        // Removed: moved_at (space savings)
+        sub_instance: String,
+        bucket: String,
+        key: String,
+        status: String
     }],
 
-    // Single timestamp
     created_at: {
         type: Date,
-        default: Date.now,
-        index: true
+        default: Date.now
+        // ← REMOVED: index: true
     }
 }, {
-    minimize: true  // Reduce stored size
+    minimize: true
 });
 
-// ============ UPDATED UPLOAD QUEUE SCHEMA ============
-// Added: title (flows through entire workflow)
-// TTL: Auto-delete after 7 days
+// ============ UPLOAD QUEUE SCHEMA ============
 const uploadQueueSchema = new mongoose.Schema({
     hash: String,
     filename: String,
-    title: String,                              // ← NEW: Pass title through queue
+    title: String,
     size: Number,
     main_r2_key: String,
     attempts: { type: Number, default: 0 },
@@ -154,18 +117,18 @@ const uploadQueueSchema = new mongoose.Schema({
     created_at: {
         type: Date,
         default: Date.now,
-        expire: 604800  // ← Auto-delete after 7 days
+        expireAfterSeconds: 604800   // 7 days
     }
 });
 
 // ============ INDEXES ============
-// File indexes
-fileSchema.index({ created_at: 1 }, { expireAfterSeconds: 2592000 }); // ← Optional: Auto-delete after 30 days
-fileSchema.index({ status: 1 });
-fileSchema.index({ hash: 1 }, { unique: true });
+// Explicit indexes (this is the recommended way)
 
-// Queue indexes  
-uploadQueueSchema.index({ created_at: 1 }, { expireAfterSeconds: 604800 }); // ← Auto-delete after 7 days
+fileSchema.index({ created_at: 1 }, { expireAfterSeconds: 2592000 }); // Auto-delete after 30 days
+fileSchema.index({ status: 1 });
+fileSchema.index({ hash: 1 }, { unique: true });   // unique is already there, but ok to reinforce
+
+uploadQueueSchema.index({ created_at: 1 }, { expireAfterSeconds: 604800 });
 uploadQueueSchema.index({ status: 1 });
 
 // ============ MODELS ============
