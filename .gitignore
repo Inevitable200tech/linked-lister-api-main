@@ -5,3 +5,4 @@ coverage
 *.env
 .DS_Store
 *.mp4
+*.json
