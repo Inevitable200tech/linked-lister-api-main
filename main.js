@@ -8,7 +8,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { MainR2, SubInstance, File, UploadQueue, AuthToken } from './utils/schema.js';
 import dotenv from 'dotenv';
 import { LOGIN_HTML, DASHBOARD_HTML } from './utils/utils.js';
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
 dotenv.config({ path: "cert.env" });
 
 const app = express();
@@ -20,6 +20,10 @@ mongoose.connect(process.env.MAIN_MONGODB_URI);
 const JWT_SECRET = process.env.JWT_SECRET || 'main-secret-key-change-in-production';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const SUB_ADMIN_KEY = process.env.SUB_ADMIN_KEY || 'admin-secret-key';
+
+// ← NEW: Upload and transfer limit constants
+const MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024;           // 1GB
+const MAX_MONTHLY_TRANSFER = 10 * 1024 * 1024 * 1024;   // 10GB per node per month
 
 console.log(`⚙️  Main System Configuration:`);
 console.log(`   JWT_SECRET: ${JWT_SECRET.substring(0, 20)}...`);
@@ -198,6 +202,90 @@ async function getSignedUrlFromSubInstance(subInstance, hash) {
     } catch (err) {
         console.error(`[SIGNED-URL] ❌ Failed to get signed URL: ${err.message}`);
         return null;
+    }
+}
+
+// ============ TRANSFER LIMIT FUNCTIONS ============
+
+async function resetMonthlyLimitIfNeeded(subInstance) {
+    const now = new Date();
+    const currentMonth = now.toISOString().slice(0, 7);  // "2025-03"
+
+    // Check if month has changed
+    if (subInstance.monthly_transfer.current_month !== currentMonth) {
+        console.log(`[TRANSFER-LIMIT] 🔄 Resetting monthly limit for ${subInstance.node_id}`);
+        console.log(`[TRANSFER-LIMIT]    Old month: ${subInstance.monthly_transfer.current_month}`);
+        console.log(`[TRANSFER-LIMIT]    New month: ${currentMonth}`);
+
+        // Reset for new month
+        await SubInstance.updateOne(
+            { node_id: subInstance.node_id },
+            {
+                'monthly_transfer.current_month': currentMonth,
+                'monthly_transfer.data_transferred': 0,
+                'monthly_transfer.reset_date': new Date(now.getFullYear(), now.getMonth() + 1, 1)
+            }
+        );
+
+        console.log(`[TRANSFER-LIMIT] ✅ Monthly limit reset for ${subInstance.node_id}\n`);
+
+        // Refresh the instance
+        return await SubInstance.findOne({ node_id: subInstance.node_id });
+    }
+
+    return subInstance;
+}
+
+async function checkMonthlyTransferLimit(subInstance, fileSizeBytes) {
+    // Reset if month has changed
+    const updated = await resetMonthlyLimitIfNeeded(subInstance);
+
+    const currentUsage = updated.monthly_transfer.data_transferred;
+    const limit = updated.monthly_transfer.limit_bytes;
+    const wouldExceed = currentUsage + fileSizeBytes;
+
+    console.log(`[TRANSFER-LIMIT] 📊 Checking ${updated.node_id} monthly limit`);
+    console.log(`[TRANSFER-LIMIT]    Current: ${(currentUsage / 1024 / 1024 / 1024).toFixed(2)}GB`);
+    console.log(`[TRANSFER-LIMIT]    File size: ${(fileSizeBytes / 1024 / 1024 / 1024).toFixed(2)}GB`);
+    console.log(`[TRANSFER-LIMIT]    Would be: ${(wouldExceed / 1024 / 1024 / 1024).toFixed(2)}GB`);
+    console.log(`[TRANSFER-LIMIT]    Limit: ${(limit / 1024 / 1024 / 1024).toFixed(2)}GB`);
+
+    if (wouldExceed > limit) {
+        console.log(`[TRANSFER-LIMIT] ❌ Would exceed limit!\n`);
+        return {
+            allowed: false,
+            reason: `Monthly transfer limit exceeded for ${updated.node_id}`,
+            current: currentUsage,
+            limit: limit,
+            remaining: Math.max(0, limit - currentUsage)
+        };
+    }
+
+    console.log(`[TRANSFER-LIMIT] ✅ Within limit\n`);
+    return {
+        allowed: true,
+        current: currentUsage,
+        limit: limit,
+        remaining: limit - currentUsage
+    };
+}
+
+async function updateMonthlyTransferUsage(nodeId, bytesAdded) {
+    try {
+        await SubInstance.updateOne(
+            { node_id: nodeId },
+            { $inc: { 'monthly_transfer.data_transferred': bytesAdded } }
+        );
+
+        const updated = await SubInstance.findOne({ node_id: nodeId });
+        const usage = updated.monthly_transfer.data_transferred;
+        const limit = updated.monthly_transfer.limit_bytes;
+
+        console.log(`[TRANSFER-LIMIT] 📈 Updated ${nodeId} usage`);
+        console.log(`[TRANSFER-LIMIT]    Added: ${(bytesAdded / 1024 / 1024 / 1024).toFixed(2)}GB`);
+        console.log(`[TRANSFER-LIMIT]    Total: ${(usage / 1024 / 1024 / 1024).toFixed(2)}GB / ${(limit / 1024 / 1024 / 1024).toFixed(2)}GB\n`);
+    } catch (err) {
+        console.error(`[TRANSFER-LIMIT] ❌ Error updating usage: ${err.message}`);
     }
 }
 
@@ -459,6 +547,16 @@ async function processUploadQueue() {
 
                     console.log(`[QUEUE]\n[QUEUE] Attempting upload to: ${subInstance.node_id}`);
 
+                    // ← NEW: Check monthly transfer limit before uploading
+                    const limitCheck = await checkMonthlyTransferLimit(subInstance, pending.size);
+                    
+                    if (!limitCheck.allowed) {
+                        console.log(`[QUEUE] ⚠️  ${limitCheck.reason}`);
+                        console.log(`[QUEUE] 📊 Remaining this month: ${(limitCheck.remaining / 1024 / 1024 / 1024).toFixed(2)}GB`);
+                        console.log(`[QUEUE] ⚠️  Trying next node...\n`);
+                        continue;  // Skip this node and try next
+                    }
+
                     // Fetch file from Main R2
                     console.log(`[QUEUE] 📥 Fetching file from Main R2...`);
                     const fileBuffer = await fetchFromMainR2(pending.hash);
@@ -478,6 +576,9 @@ async function processUploadQueue() {
                     }
 
                     console.log(`[QUEUE] ✅ Upload succeeded to ${subInstance.node_id}`);
+
+                    // ← NEW: Update monthly transfer usage
+                    await updateMonthlyTransferUsage(subInstance.node_id, pending.size);
 
                     // Update file metadata with new location
                     await File.updateOne(
@@ -521,10 +622,10 @@ async function processUploadQueue() {
                     { _id: pending._id },
                     {
                         status: 'failed',
-                        error_message: 'All nodes failed'
+                        error_message: 'All nodes failed or transfer limits exceeded'
                     }
                 );
-                console.log(`[QUEUE] ❌ All nodes failed for: ${pending.hash}`);
+                console.log(`[QUEUE] ❌ All nodes failed or limits exceeded for: ${pending.hash}`);
             }
 
             console.log(`[QUEUE] ═══════════════════════════════════════\n`);
@@ -673,18 +774,72 @@ app.get('/api/dashboard/status', verifyToken, async (req, res) => {
             active_nodes: instances.filter(i => i.status === 'active').length,
             total_files: totalFiles,
             total_size: totalSize[0]?.total || 0,
-            nodes: instances.map(i => ({
-                node_id: i.node_id,
-                url: i.url,
-                status: i.status,
-                free_space: i.free_space,
-                total_space: i.total_space,
-                file_count: i.file_count,
-                last_heartbeat: i.last_heartbeat
-            }))
+            file_size_limit: MAX_FILE_SIZE,
+            file_size_limit_gb: MAX_FILE_SIZE / 1024 / 1024 / 1024,
+            nodes: instances.map(i => {
+                const monthlyTransfer = i.monthly_transfer;
+                const used = monthlyTransfer.data_transferred;
+                const limit = monthlyTransfer.limit_bytes;
+                
+                return {
+                    node_id: i.node_id,
+                    url: i.url,
+                    status: i.status,
+                    free_space: i.free_space,
+                    total_space: i.total_space,
+                    file_count: i.file_count,
+                    last_heartbeat: i.last_heartbeat,
+                    // ← NEW: Monthly transfer stats
+                    monthly_transfer: {
+                        current_month: monthlyTransfer.current_month,
+                        limit_gb: (limit / 1024 / 1024 / 1024).toFixed(2),
+                        used_gb: (used / 1024 / 1024 / 1024).toFixed(2),
+                        remaining_gb: ((limit - used) / 1024 / 1024 / 1024).toFixed(2),
+                        percent_used: ((used / limit) * 100).toFixed(1),
+                        reset_date: monthlyTransfer.reset_date
+                    }
+                };
+            })
         };
 
         res.json({ success: true, stats });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ NEW ENDPOINT: GET NODE TRANSFER STATS ============
+
+app.get('/api/dashboard/node-limits/:nodeId', verifyToken, async (req, res) => {
+    try {
+        const { nodeId } = req.params;
+        
+        const node = await SubInstance.findOne({ node_id: nodeId });
+        if (!node) {
+            return res.status(404).json({ error: 'Node not found' });
+        }
+
+        const monthlyTransfer = node.monthly_transfer;
+        const currentUsage = monthlyTransfer.data_transferred;
+        const limit = monthlyTransfer.limit_bytes;
+        const remaining = Math.max(0, limit - currentUsage);
+        const percentUsed = (currentUsage / limit * 100).toFixed(1);
+
+        res.json({
+            success: true,
+            node_id: nodeId,
+            monthly_limit: {
+                current_month: monthlyTransfer.current_month,
+                limit_bytes: limit,
+                limit_gb: limit / 1024 / 1024 / 1024,
+                data_transferred_bytes: currentUsage,
+                data_transferred_gb: (currentUsage / 1024 / 1024 / 1024).toFixed(2),
+                remaining_bytes: remaining,
+                remaining_gb: (remaining / 1024 / 1024 / 1024).toFixed(2),
+                percent_used: parseFloat(percentUsed),
+                reset_date: monthlyTransfer.reset_date
+            }
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -905,6 +1060,18 @@ app.post('/api/upload', async (req, res) => {
         console.log('[UPLOAD]    Filename: ' + file.name);
         console.log('[UPLOAD]    Title: ' + (title || 'Not provided'));
         console.log('[UPLOAD]    Size: ' + (fileSize / 1024 / 1024).toFixed(2) + ' MB');
+
+        // ← NEW: Check file size limit (1GB max)
+        if (fileSize > MAX_FILE_SIZE) {
+            console.log(`[UPLOAD] ❌ File exceeds 1GB limit`);
+            console.log('[UPLOAD] ═══════════════════════════════════════\n');
+            return res.status(413).json({
+                error: 'File too large',
+                message: `Maximum file size is 1GB. Your file is ${(fileSize / 1024 / 1024 / 1024).toFixed(2)}GB`,
+                max_size: MAX_FILE_SIZE,
+                your_size: fileSize
+            });
+        }
 
         const existingFile = await File.findOne({ hash });
         if (existingFile) {

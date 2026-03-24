@@ -2,43 +2,6 @@ import mongoose from 'mongoose';
 
 // ============ SCHEMAS ============
 
-// ============ AUTH TOKEN SCHEMA - FOR PUBLIC API ACCESS ============
-// Tokens created in dashboard can be shared with external instances
-// Each token has: name, token value, creation date, last used, active status
-const authTokenSchema = new mongoose.Schema({
-    name: {
-        type: String,
-        required: true,           // e.g., "Scraper Instance 1"
-    },
-    token: {
-        type: String,
-        required: true,
-        unique: true,
-        index: true              // Fast token lookup
-    },
-    description: String,          // Optional notes about this token
-    created_at: {
-        type: Date,
-        default: Date.now,
-        index: true
-    },
-    last_used: {
-        type: Date,
-        default: null
-    },
-    status: {
-        type: String,
-        enum: ['active', 'revoked'],
-        default: 'active',
-        index: true
-    },
-    created_by: String,           // Admin username who created it
-    expires_at: {
-        type: Date,
-        default: null             // null = never expires; can set for temporary tokens
-    }
-});
-
 const mainR2Schema = new mongoose.Schema({
     bucket_name: { type: String, required: true, unique: true },
     account_id: String,
@@ -58,6 +21,31 @@ const subInstanceSchema = new mongoose.Schema({
     file_count: { type: Number, default: 0 },
     last_heartbeat: { type: Date, default: null },
     r2_buckets: { type: Number, default: 0 },
+    
+    // â† NEW: Monthly transfer tracking (10GB limit per month)
+    monthly_transfer: {
+        current_month: {
+            type: String,
+            default: () => new Date().toISOString().slice(0, 7)  // "2025-03"
+        },
+        data_transferred: {
+            type: Number,
+            default: 0                     // Bytes transferred this month
+        },
+        limit_bytes: {
+            type: Number,
+            default: 10 * 1024 * 1024 * 1024  // 10GB in bytes
+        },
+        reset_date: {
+            type: Date,
+            default: () => {
+                const now = new Date();
+                const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+                return nextMonth;
+            }
+        }
+    },
+    
     created_at: { type: Date, default: Date.now }
 });
 
@@ -148,7 +136,6 @@ uploadQueueSchema.index({ created_at: 1 }, { expireAfterSeconds: 604800 }); // â
 uploadQueueSchema.index({ status: 1 });
 
 // ============ MODELS ============
-export const AuthToken = mongoose.model('AuthToken', authTokenSchema);
 export const MainR2 = mongoose.model('MainR2', mainR2Schema);
 export const SubInstance = mongoose.model('SubInstance', subInstanceSchema);
 export const File = mongoose.model('File', fileSchema);

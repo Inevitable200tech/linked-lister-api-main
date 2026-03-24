@@ -1,4 +1,5 @@
-export const DASHBOARD_HTML = `<!DOCTYPE html>
+export const DASHBOARD_HTML = `
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -6,83 +7,94 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
     <title>Main System - Dashboard</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a1a; }
         .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
-        header { background: #34495e; color: white; padding: 30px; border-radius: 8px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; }
+        header { background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%); color: white; padding: 30px; border-radius: 8px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         header h1 { font-size: 28px; }
-        .logout-btn { padding: 10px 20px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .logout-btn { padding: 10px 20px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
         .logout-btn:hover { background: #c0392b; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #ddd; overflow-x: auto; }
-        .tab-btn { padding: 12px 20px; border: none; background: none; cursor: pointer; font-size: 16px; border-bottom: 3px solid transparent; margin-bottom: -2px; white-space: nowrap; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #ddd; overflow-x: auto; background: white; padding: 0 0 0 0; border-radius: 8px 8px 0 0; }
+        .tab-btn { padding: 12px 20px; border: none; background: none; cursor: pointer; font-size: 16px; border-bottom: 3px solid transparent; margin-bottom: -2px; white-space: nowrap; color: #555; font-weight: 500; transition: all 0.3s; }
+        .tab-btn:hover { color: #2c3e50; }
         .tab-btn.active { color: #e74c3c; border-bottom-color: #e74c3c; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        .section { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .section h2 { margin-bottom: 20px; font-size: 20px; color: #34495e; }
-        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
-        .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; text-align: center; }
+        .section { background: white; padding: 25px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-left: 4px solid #3498db; }
+        .section h2 { margin-bottom: 20px; font-size: 20px; color: #2c3e50; font-weight: 700; }
+        .section h3 { margin-bottom: 15px; font-size: 16px; color: #2c3e50; font-weight: 600; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .stat-value { font-size: 28px; font-weight: bold; margin-bottom: 5px; }
-        .stat-label { font-size: 12px; opacity: 0.9; }
+        .stat-label { font-size: 12px; opacity: 0.9; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
         .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; font-weight: 500; }
-        .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; color: #2c3e50; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; color: #1a1a1a; background: white; }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: #3498db; box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1); }
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        button { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
-        button:hover { background: #2980b9; }
+        button { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s; }
+        button:hover { background: #2980b9; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
         button.danger { background: #e74c3c; }
-        .message { padding: 12px; border-radius: 4px; margin-bottom: 15px; }
-        .message.success { background: #d4edda; color: #155724; }
-        .message.error { background: #f8d7da; color: #721c24; }
+        button.danger:hover { background: #c0392b; }
+        .message { padding: 12px; border-radius: 4px; margin-bottom: 15px; font-weight: 600; }
+        .message.success { background: #d4edda; color: #155724; border-left: 4px solid #28a745; }
+        .message.error { background: #f8d7da; color: #721c24; border-left: 4px solid #dc3545; }
         .table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        .table th, .table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-        .table th { background: #f5f5f5; font-weight: 600; }
-        .card { background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
-        .card h3 { margin-bottom: 10px; color: #34495e; }
+        .table th, .table td { padding: 12px; text-align: left; border-bottom: 1px solid #e0e0e0; color: #1a1a1a; }
+        .table th { background: #f5f5f5; font-weight: 700; color: #2c3e50; }
+        .table tr:hover { background: #f9f9f9; }
+        .card { background: #f8f9fa; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; border-left: 4px solid #3498db; }
+        .card h3 { margin-bottom: 10px; color: #2c3e50; font-weight: 700; }
+        
+        /* Node stats */
+        .node-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; font-size: 13px; }
+        .node-stat-item { background: white; padding: 10px; border-radius: 4px; border-left: 3px solid #3498db; }
+        .node-stat-label { color: #7f8c8d; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+        .node-stat-value { color: #2c3e50; font-weight: 700; margin-top: 3px; }
+        .node-stat-value.warning { color: #f39c12; }
+        .node-stat-value.danger { color: #e74c3c; }
+        .node-stat-progress { width: 100%; height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; margin-top: 5px; }
+        .node-stat-progress-bar { height: 100%; background: linear-gradient(90deg, #27ae60, #f39c12); }
         
         /* Upload styles */
         .upload-zone { border: 2px dashed #3498db; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.3s; background: #f8f9fa; }
         .upload-zone:hover { border-color: #2980b9; background: #eef5f9; }
         .upload-zone.dragover { border-color: #e74c3c; background: #fff5f5; }
         .upload-zone.active { border-color: #27ae60; background: #f0fdf4; }
-        .upload-zone-text { font-size: 18px; color: #666; margin-bottom: 10px; }
-        .upload-zone-hint { font-size: 12px; color: #999; }
+        .upload-zone-text { font-size: 18px; color: #2c3e50; margin-bottom: 10px; font-weight: 600; }
+        .upload-zone-hint { font-size: 12px; color: #7f8c8d; }
         #file-input { display: none; }
         .upload-progress { margin-top: 20px; }
-        .progress-item { background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+        .progress-item { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; border-left: 4px solid #3498db; }
         .progress-item-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
-        .progress-item-name { font-weight: 500; }
-        .progress-item-status { font-size: 12px; color: #666; }
-        .progress-bar { width: 100%; height: 8px; background: #ddd; border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+        .progress-item-name { font-weight: 600; color: #2c3e50; }
+        .progress-item-status { font-size: 12px; color: #7f8c8d; }
+        .progress-bar { width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
         .progress-bar-fill { height: 100%; background: #3498db; width: 0%; transition: width 0.3s; }
         .progress-item.success .progress-bar-fill { background: #27ae60; width: 100%; }
         .progress-item.error .progress-bar-fill { background: #e74c3c; width: 100%; }
-        .progress-info { font-size: 12px; color: #666; }
-        .upload-result { margin-top: 20px; padding: 15px; border-radius: 8px; }
-        .upload-result.success { background: #d4edda; color: #155724; }
-        .upload-result.error { background: #f8d7da; color: #721c24; }
-        .upload-result-hash { font-family: monospace; font-size: 12px; word-break: break-all; }
+        .progress-info { font-size: 12px; color: #7f8c8d; }
         
         /* File Grid Styles */
         .files-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
-        .file-card { background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; transition: all 0.3s; }
+        .file-card { background: white; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; transition: all 0.3s; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
         .file-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-2px); }
         .file-card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; }
-        .file-card-title { font-weight: 600; word-break: break-word; margin-bottom: 5px; }
+        .file-card-title { font-weight: 700; word-break: break-word; margin-bottom: 5px; }
         .file-card-subtitle { font-size: 12px; opacity: 0.8; margin-bottom: 8px; }
         .file-card-type { font-size: 12px; opacity: 0.9; }
         .file-card-body { padding: 15px; }
         .file-card-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; font-size: 13px; }
         .file-card-info-item { }
-        .file-card-info-label { color: #999; font-size: 11px; text-transform: uppercase; }
-        .file-card-info-value { font-weight: 600; color: #333; font-family: monospace; font-size: 11px; }
-        .file-card-status { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 10px; }
+        .file-card-info-label { color: #7f8c8d; font-size: 11px; text-transform: uppercase; font-weight: 600; }
+        .file-card-info-value { font-weight: 700; color: #2c3e50; font-family: monospace; font-size: 11px; }
+        .file-card-status { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-bottom: 10px; }
         .file-card-status.pending { background: #fff3cd; color: #856404; }
         .file-card-status.distributed { background: #d4edda; color: #155724; }
-        .file-card-location { font-size: 12px; color: #666; margin-bottom: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px; border-left: 3px solid #3498db; }
-        .file-card-location-label { font-size: 10px; color: #999; text-transform: uppercase; }
-        .file-card-location-value { font-weight: 600; margin-top: 3px; }
+        .file-card-location { font-size: 12px; color: #2c3e50; margin-bottom: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px; border-left: 3px solid #3498db; }
+        .file-card-location-label { font-size: 10px; color: #7f8c8d; text-transform: uppercase; font-weight: 600; }
+        .file-card-location-value { font-weight: 700; margin-top: 3px; }
         .file-card-actions { display: flex; gap: 8px; }
-        .file-card-action-btn { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #333; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.3s; }
+        .file-card-action-btn { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #2c3e50; cursor: pointer; font-size: 13px; font-weight: 700; transition: all 0.3s; }
         .file-card-action-btn:hover { background: #3498db; color: white; border-color: #3498db; }
         .file-card-action-btn.download { background: #27ae60; color: white; border-color: #27ae60; }
         .file-card-action-btn.download:hover { background: #229954; border-color: #229954; }
@@ -92,24 +104,25 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
         .modal.active { display: flex; }
         .modal-content { background: white; border-radius: 8px; width: 90%; max-width: 900px; max-height: 90vh; overflow: auto; position: relative; }
-        .modal-header { background: #34495e; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
-        .modal-title { font-size: 18px; font-weight: 600; word-break: break-word; }
+        .modal-header { background: #2c3e50; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .modal-title { font-size: 18px; font-weight: 700; word-break: break-word; }
         .modal-close { background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; }
         .modal-close:hover { background: rgba(255,255,255,0.1); border-radius: 4px; }
         .modal-body { padding: 20px; }
         .video-container { width: 100%; background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 20px; }
         .video-player { width: 100%; height: auto; display: block; }
-        .file-details { background: #f9f9f9; padding: 15px; border-radius: 8px; }
+        .file-details { background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; }
         .detail-row { display: grid; grid-template-columns: 150px 1fr; gap: 20px; margin-bottom: 15px; font-size: 14px; }
-        .detail-label { font-weight: 600; color: #34495e; }
-        .detail-value { color: #666; word-break: break-all; }
-        .detail-value code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 12px; }
+        .detail-label { font-weight: 700; color: #2c3e50; }
+        .detail-value { color: #2c3e50; word-break: break-all; }
+        .detail-value code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 12px; color: #e74c3c; }
         
         @media (max-width: 768px) { 
-            .stats-grid { grid-template-columns: 2fr; } 
+            .stats-grid { grid-template-columns: repeat(2, 1fr); } 
             .form-row { grid-template-columns: 1fr; }
             .files-grid { grid-template-columns: 1fr; }
             .detail-row { grid-template-columns: 1fr; }
+            .node-stats { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -121,18 +134,18 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         </header>
  
         <div class="tabs">
-            <button class="tab-btn active" data-tab="overview" onclick="window.switchTab('overview')">Overview</button>
+            <button class="tab-btn active" data-tab="overview" onclick="window.switchTab('overview')">📊 Overview</button>
             <button class="tab-btn" data-tab="upload" onclick="window.switchTab('upload')">📤 Upload File</button>
             <button class="tab-btn" data-tab="api-tokens" onclick="window.switchTab('api-tokens')">🔑 API Tokens</button>
-            <button class="tab-btn" data-tab="r2-config" onclick="window.switchTab('r2-config')">Main R2</button>
-            <button class="tab-btn" data-tab="nodes" onclick="window.switchTab('nodes')">Sub-Instances</button>
+            <button class="tab-btn" data-tab="r2-config" onclick="window.switchTab('r2-config')">⚙️ Main R2</button>
+            <button class="tab-btn" data-tab="nodes" onclick="window.switchTab('nodes')">🖥️ Sub-Instances</button>
             <button class="tab-btn" data-tab="files" onclick="window.switchTab('files')">📁 Files</button>
-            <button class="tab-btn" data-tab="queue" onclick="window.switchTab('queue')">Upload Queue</button>
+            <button class="tab-btn" data-tab="queue" onclick="window.switchTab('queue')">📋 Queue</button>
         </div>
  
         <div id="overview" class="tab-content active">
             <div class="section">
-                <h2>System Status</h2>
+                <h2>📊 System Status</h2>
                 <div class="stats-grid">
                     <div class="stat-card"><div class="stat-value" id="stat-nodes">0</div><div class="stat-label">Sub-Instances</div></div>
                     <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);"><div class="stat-value" id="stat-files">0</div><div class="stat-label">Files</div></div>
@@ -140,26 +153,31 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     <div class="stat-card" style="background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);"><div class="stat-value" id="stat-buckets">0</div><div class="stat-label">R2 Buckets</div></div>
                 </div>
             </div>
+
+            <div class="section">
+                <h2>🖥️ Node Usage Summary</h2>
+                <div id="overview-nodes">Loading...</div>
+            </div>
         </div>
  
         <div id="upload" class="tab-content">
             <div class="section">
                 <h2>📤 Upload File</h2>
-                <p style="margin-bottom: 20px; color: #666;">Upload a video or file to test the distributed storage workflow. Files will be queued for distribution to sub-instances.</p>
+                <p style="margin-bottom: 20px; color: #2c3e50;">Upload a video or file to test the distributed storage workflow. Files will be queued for distribution to sub-instances.</p>
                 
                 <div id="upload-message"></div>
 
-                <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; margin-bottom: 20px;">
+                <div style="background: #ecf0f1; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; margin-bottom: 20px;">
                     <div class="form-group">
                         <label for="upload-title">📝 Title (Optional)</label>
                         <input type="text" id="upload-title" placeholder="Give your file a title..." style="margin-bottom: 0;">
                     </div>
-                    <div style="font-size: 12px; color: #666; margin-top: 8px;">💡 Add a descriptive title for your file. If not provided, filename will be used.</div>
+                    <div style="font-size: 12px; color: #2c3e50; margin-top: 8px;">💡 Add a descriptive title for your file. If not provided, filename will be used.</div>
                 </div>
  
                 <div class="upload-zone" id="upload-zone" ondrop="window.handleDrop(event)" ondragover="window.handleDragOver(event)" ondragleave="window.handleDragLeave(event)" onclick="document.getElementById('file-input').click()">
                     <div class="upload-zone-text">📁 Drop files here or click to select</div>
-                    <div class="upload-zone-hint">Supports video, images, and any file type</div>
+                    <div class="upload-zone-hint">Supports video, images, and any file type (Max 1GB)</div>
                 </div>
                 <input type="file" id="file-input" onchange="window.handleFileSelect(event)">
  
@@ -167,10 +185,10 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             </div>
  
             <div class="section">
-                <h2>How it works</h2>
-                <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; margin-bottom: 15px;">
-                    <h3 style="margin-bottom: 10px; color: #34495e;">📋 Workflow</h3>
-                    <ol style="margin-left: 20px; color: #666;">
+                <h2>ℹ️ How it works</h2>
+                <div style="background: #ecf0f1; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; margin-bottom: 15px;">
+                    <h3 style="margin-bottom: 10px; color: #2c3e50;">📋 Workflow</h3>
+                    <ol style="margin-left: 20px; color: #2c3e50;">
                         <li><strong>Upload:</strong> File is sent to main system and stored in Main R2 bucket</li>
                         <li><strong>Queued:</strong> File is added to upload queue for distribution</li>
                         <li><strong>Processing:</strong> Queue processor checks for suitable sub-instances</li>
@@ -180,8 +198,8 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 </div>
  
                 <div style="background: #fef9e7; padding: 15px; border-radius: 8px; border-left: 4px solid #f39c12; margin-bottom: 15px;">
-                    <h3 style="margin-bottom: 10px; color: #34495e;">⚠️ Requirements</h3>
-                    <ul style="margin-left: 20px; color: #666;">
+                    <h3 style="margin-bottom: 10px; color: #2c3e50;">⚠️ Requirements</h3>
+                    <ul style="margin-left: 20px; color: #2c3e50;">
                         <li>✅ Main R2 bucket must be configured (Main R2 tab)</li>
                         <li>✅ At least 1 sub-instance must be registered (Sub-Instances tab)</li>
                         <li>✅ Sub-instance must be online and have available space</li>
@@ -189,9 +207,9 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 </div>
  
                 <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #27ae60; margin-bottom: 15px;">
-                    <h3 style="margin-bottom: 10px; color: #34495e;">💡 Monitoring</h3>
-                    <ul style="margin-left: 20px; color: #666;">
-                        <li>📊 Check <strong>Upload Queue</strong> tab to see queue progress</li>
+                    <h3 style="margin-bottom: 10px; color: #2c3e50;">💡 Monitoring</h3>
+                    <ul style="margin-left: 20px; color: #2c3e50;">
+                        <li>📊 Check <strong>Queue</strong> tab to see queue progress</li>
                         <li>📁 Check <strong>Files</strong> tab to see final status and location</li>
                         <li>🔍 Watch server logs for detailed [QUEUE] and [SPACE-CHECK] messages</li>
                     </ul>
@@ -202,12 +220,12 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         <div id="api-tokens" class="tab-content">
             <div class="section">
                 <h2>🔑 Create API Token</h2>
-                <p style="margin-bottom: 20px; color: #666;">Create tokens for external services (scrapers, etc.) to access the public file API with Bearer token authentication.</p>
+                <p style="margin-bottom: 20px; color: #2c3e50;">Create tokens for external services (scrapers, etc.) to access the public file API with Bearer token authentication.</p>
                 
                 <div id="token-message"></div>
 
-                <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; margin-bottom: 20px;">
-                    <h3 style="margin-bottom: 10px; color: #34495e;">📋 Token Details</h3>
+                <div style="background: #ecf0f1; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 10px; color: #2c3e50;">📋 Token Details</h3>
                     <form onsubmit="window.createToken(event)">
                         <div class="form-row">
                             <div class="form-group">
@@ -236,20 +254,20 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             <div class="section">
                 <h2>💡 How to Use Tokens</h2>
                 <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #27ae60; margin-bottom: 15px;">
-                    <h3 style="margin-bottom: 10px; color: #34495e;">List Files</h3>
-                    <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px;">curl http://localhost:3000/api/public/files \\
+                    <h3 style="margin-bottom: 10px; color: #2c3e50;">List Files</h3>
+                    <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; color: #2c3e50;">curl http://localhost:3000/api/public/files \\
   -H "Authorization: Bearer YOUR_TOKEN"</pre>
                 </div>
 
                 <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #27ae60; margin-bottom: 15px;">
-                    <h3 style="margin-bottom: 10px; color: #34495e;">Get File Details</h3>
-                    <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px;">curl http://localhost:3000/api/public/file/HASH \\
+                    <h3 style="margin-bottom: 10px; color: #2c3e50;">Get File Details</h3>
+                    <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; color: #2c3e50;">curl http://localhost:3000/api/public/file/HASH \\
   -H "Authorization: Bearer YOUR_TOKEN"</pre>
                 </div>
 
                 <div style="background: #fef9e7; padding: 15px; border-radius: 8px; border-left: 4px solid #f39c12;">
-                    <h3 style="margin-bottom: 10px; color: #34495e;">⚠️ Token Security</h3>
-                    <ul style="margin-left: 20px; color: #666;">
+                    <h3 style="margin-bottom: 10px; color: #2c3e50;">⚠️ Token Security</h3>
+                    <ul style="margin-left: 20px; color: #2c3e50;">
                         <li>✅ Token is only shown once at creation - save it immediately</li>
                         <li>✅ Store tokens in environment variables (never in code)</li>
                         <li>✅ Revoke tokens immediately if compromised</li>
@@ -261,7 +279,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
  
         <div id="r2-config" class="tab-content">
             <div class="section">
-                <h2>Configure Main R2 Bucket</h2>
+                <h2>⚙️ Configure Main R2 Bucket</h2>
                 <div id="r2-message"></div>
                 <form onsubmit="window.addMainR2(event)">
                     <div class="form-row">
@@ -284,7 +302,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
  
         <div id="nodes" class="tab-content">
             <div class="section">
-                <h2>Add Sub-Instance</h2>
+                <h2>🖥️ Add Sub-Instance</h2>
                 <div id="add-node-message"></div>
                 <form onsubmit="window.addNode(event)">
                     <div class="form-row">
@@ -296,7 +314,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             </div>
  
             <div class="section">
-                <h2>Sub-Instances</h2>
+                <h2>📊 Sub-Instances Status</h2>
                 <div id="nodes-list">Loading...</div>
             </div>
         </div>
@@ -310,7 +328,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
  
         <div id="queue" class="tab-content">
             <div class="section">
-                <h2>Upload Queue</h2>
+                <h2>📋 Upload Queue</h2>
                 <table class="table">
                     <thead><tr><th>Hash</th><th>Filename</th><th>Title</th><th>Size</th><th>Status</th><th>Attempts</th><th>Message</th></tr></thead>
                     <tbody id="queue-list"><tr><td colspan="7">Loading...</td></tr></tbody>
@@ -334,7 +352,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
             document.getElementById(tab).classList.add('active');
-            const btn = document.querySelector('[data-tab="' + tab + '"]');
+            const btn = document.querySelector(\`[data-tab="\${tab}"]\`);
             if (btn) btn.classList.add('active');
             if (tab === 'overview') window.loadOverview();
             if (tab === 'api-tokens') window.loadTokens();
@@ -345,7 +363,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         };
  
         window.showMessage = function(el, msg, type) {
-            document.getElementById(el).innerHTML = '<div class="message ' + type + '">' + msg + '</div>';
+            document.getElementById(el).innerHTML = \`<div class="message \${type}">\${msg}</div>\`;
             setTimeout(() => document.getElementById(el).innerHTML = '', 5000);
         };
  
@@ -356,7 +374,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         };
  
         window.apiCall = async function(url, opts = {}) {
-            const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...opts.headers };
+            const headers = { 'Authorization': \`Bearer \${token}\`, 'Content-Type': 'application/json', ...opts.headers };
             const res = await fetch(url, { ...opts, headers });
             if (res.status === 401) {
                 localStorage.removeItem('token');
@@ -375,6 +393,45 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 document.getElementById('stat-size').textContent = window.formatBytes(d.stats.total_size);
                 const totalBuckets = d.stats.nodes.reduce((sum, n) => sum + n.r2_buckets, 0);
                 document.getElementById('stat-buckets').textContent = totalBuckets;
+
+                // Load node usage summary
+                const nodeHtml = d.stats.nodes.map(n => {
+                    const usage = n.monthly_transfer || {};
+                    const used = parseFloat(usage.used_gb) || 0;
+                    const limit = parseFloat(usage.limit_gb) || 10;
+                    const percent = parseInt(usage.percent_used) || 0;
+                    const statusColor = percent > 80 ? '#e74c3c' : percent > 50 ? '#f39c12' : '#27ae60';
+                    
+                    return \`
+                        <div class="card">
+                            <h3>\${n.node_id} \${n.status === 'active' ? '🟢' : '🔴'}</h3>
+                            <div class="node-stats">
+                                <div class="node-stat-item">
+                                    <div class="node-stat-label">Status</div>
+                                    <div class="node-stat-value">\${n.status}</div>
+                                </div>
+                                <div class="node-stat-item">
+                                    <div class="node-stat-label">Files</div>
+                                    <div class="node-stat-value">\${n.file_count || 0}</div>
+                                </div>
+                                <div class="node-stat-item">
+                                    <div class="node-stat-label">Free Space</div>
+                                    <div class="node-stat-value">\${window.formatBytes(n.free_space || 0)}</div>
+                                </div>
+                            </div>
+                            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
+                                <div class="node-stat-label" style="margin-bottom: 8px;">📊 Monthly Transfer Usage</div>
+                                <div class="node-stat-value" style=\`color: \${statusColor}; margin-bottom: 8px;\`>\${used.toFixed(2)} GB / \${limit.toFixed(2)} GB (\${percent}%)</div>
+                                <div class="node-stat-progress">
+                                    <div class="node-stat-progress-bar" style="width: \${Math.min(percent, 100)}%; background: \${statusColor};"></div>
+                                </div>
+                                <div style="font-size: 11px; color: #7f8c8d; margin-top: 5px;">Resets: \${usage.reset_date ? new Date(usage.reset_date).toLocaleDateString() : 'N/A'}</div>
+                            </div>
+                        </div>
+                    \`;
+                }).join('');
+
+                document.getElementById('overview-nodes').innerHTML = nodeHtml || '<p>No nodes configured</p>';
             } catch (e) { console.error(e); }
         };
  
@@ -382,7 +439,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             try {
                 const res = await window.apiCall('/api/main-r2');
                 const d = await res.json();
-                const html = d.buckets.map(b => '<div class="card"><h3>' + b.bucket_name + '</h3><p><strong>Account:</strong> ' + b.account_id + '</p><p><strong>Status:</strong> ' + b.status + '</p></div>').join('');
+                const html = d.buckets.map(b => \`<div class="card"><h3>\${b.bucket_name}</h3><p><strong>Account:</strong> \${b.account_id}</p><p><strong>Status:</strong> \${b.status}</p></div>\`).join('');
                 document.getElementById('r2-list').innerHTML = html || '<p>No main R2 buckets configured</p>';
             } catch (e) { console.error(e); }
         };
@@ -391,9 +448,35 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             try {
                 const res = await window.apiCall('/api/dashboard/sub-instances');
                 const d = await res.json();
-                const html = d.instances.map(n => '<div class="card"><h3>' + n.node_id + '</h3><p><span style="display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; background: ' + (n.status === 'active' ? '#d4edda' : '#f8d7da') + '; color: ' + (n.status === 'active' ? '#155724' : '#721c24') + ';">' + n.status.toUpperCase() + '</span></p><p><strong>URL:</strong> ' + n.url + '</p><p><strong>Space:</strong> ' + window.formatBytes(n.free_space) + ' free / ' + window.formatBytes(n.total_space) + ' total</p><button class="danger delete-node-btn" data-node-id="' + n.node_id + '" style="margin-top: 10px;">Delete</button></div>').join('');
+                const html = d.instances.map(n => {
+                    const usage = n.monthly_transfer || {};
+                    const used = parseFloat(usage.used_gb) || 0;
+                    const limit = parseFloat(usage.limit_gb) || 10;
+                    const percent = parseInt(usage.percent_used) || 0;
+                    const statusColor = percent > 80 ? '#e74c3c' : percent > 50 ? '#f39c12' : '#27ae60';
+                    
+                    return \`
+                        <div class="card">
+                            <h3>\${n.node_id} <span style="display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; background: \${n.status === 'active' ? '#d4edda' : '#f8d7da'}; color: \${n.status === 'active' ? '#155724' : '#721c24'};>\${n.status.toUpperCase()}</span></h3>
+                            <p><strong>URL:</strong> \${n.url}</p>
+                            <p><strong>Files:</strong> \${n.file_count || 0}</p>
+                            <p><strong>Free Space:</strong> \${window.formatBytes(n.free_space || 0)} / \${window.formatBytes(n.total_space || 0)}</p>
+                            
+                            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
+                                <div style="font-size: 13px; font-weight: 700; color: #2c3e50; margin-bottom: 8px;">📊 Monthly Transfer Usage</div>
+                                <div style="font-size: 14px; font-weight: 700; color: \${statusColor}; margin-bottom: 8px;">\${used.toFixed(2)} GB / \${limit.toFixed(2)} GB (\${percent}%)</div>
+                                <div class="node-stat-progress">
+                                    <div class="node-stat-progress-bar" style="width: \${Math.min(percent, 100)}%; background: \${statusColor};"></div>
+                                </div>
+                                <div style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">💡 \${percent > 80 ? '🔴 Almost at limit!' : percent > 50 ? '🟡 More than half used' : '🟢 Well within limit'}</div>
+                                <div style="font-size: 12px; color: #7f8c8d;">Resets: \${usage.reset_date ? new Date(usage.reset_date).toLocaleDateString() : 'N/A'}</div>
+                            </div>
+                            
+                            <button class="danger" style="margin-top: 10px; width: 100%;" onclick="window.deleteNode('\${n.node_id}')">Delete</button>
+                        </div>
+                    \`;
+                }).join('');
                 document.getElementById('nodes-list').innerHTML = html;
-                document.querySelectorAll('.delete-node-btn').forEach(btn => btn.addEventListener('click', e => window.deleteNode(e.target.dataset.nodeId)));
             } catch (e) { console.error(e); }
         };
  
@@ -457,7 +540,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             try {
                 const res = await window.apiCall('/api/upload-queue');
                 const d = await res.json();
-                const html = d.queue.map(q => '<tr><td><code>' + q.hash.substring(0, 16) + '...</code></td><td>' + q.filename + '</td><td>' + (q.title || '-') + '</td><td>' + window.formatBytes(q.size) + '</td><td>' + q.status + '</td><td>' + (q.attempts || 0) + '/' + (q.max_attempts || 3) + '</td><td>' + (q.error_message || '-') + '</td></tr>').join('');
+                const html = d.queue.map(q => \`<tr><td><code>\${q.hash.substring(0, 16)}...</code></td><td>\${q.filename}</td><td>\${q.title || '-'}</td><td>\${window.formatBytes(q.size)}</td><td>\${q.status}</td><td>\${(q.attempts || 0)}/\${(q.max_attempts || 3)}</td><td>\${q.error_message || '-'}</td></tr>\`).join('');
                 document.getElementById('queue-list').innerHTML = html || '<tr><td colspan="7">Queue empty</td></tr>';
             } catch (e) { console.error(e); }
         };
@@ -490,8 +573,8 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         <p><strong>Created:</strong> \${new Date(t.created_at).toLocaleString()}</p>
                         <p><strong>Last Used:</strong> \${lastUsed}</p>
                         <p><strong>Expires:</strong> \${expiresAt}</p>
-                        \${t.status === 'active' ?  \`<button class="danger" style="margin-top: 10px; cursor: pointer;" onclick="window.revokeToken('\${t.id}', '\${t.name}')">Revoke Token</button>\` : ''}
-                    </div > \`;
+                        \${t.status === 'active' ? \`<button class="danger" style="margin-top: 10px; cursor: pointer; width: 100%;" onclick="window.revokeToken('\${t.id}', '\${t.name}')">Revoke Token</button>\` : ''}
+                    </div>\`;
                 }).join('');
                 
                 document.getElementById('tokens-list').innerHTML = html;
@@ -513,7 +596,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 return;
             }
 
-            // Convert datetime-local to ISO string
             let expiresAt = null;
             if (expiresAtInput) {
                 expiresAt = new Date(expiresAtInput).toISOString();
@@ -537,28 +619,25 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     return;
                 }
 
-                // Show token with copy button
                 const tokenValue = result.token.token;
                 const tokenHtml = \`
-    < div style = "background: #d4edda; padding: 20px; border-radius: 8px; border: 1px solid #c3e6cb;" >
+                    <div style="background: #d4edda; padding: 20px; border-radius: 8px; border: 1px solid #c3e6cb;">
                         <h3 style="color: #155724; margin-bottom: 15px;">✅ Token Created Successfully!</h3>
                         <p style="color: #155724; margin-bottom: 10px;"><strong>⚠️ Save this token now - it will not be shown again!</strong></p>
-                        <div style="background: white; padding: 15px; border-radius: 4px; border: 1px solid #bbb; margin-bottom: 15px; word-break: break-all; font-family: monospace; font-size: 12px;">
+                        <div style="background: white; padding: 15px; border-radius: 4px; border: 1px solid #bbb; margin-bottom: 15px; word-break: break-all; font-family: monospace; font-size: 12px; color: #1a1a1a;">
                             \${tokenValue}
                         </div>
                         <button class="file-card-action-btn" style="cursor: pointer; padding: 10px 20px; background: #27ae60; border-color: #27ae60; color: white; width: auto;" onclick="window.copyTokenValue('\${tokenValue}')">📋 Copy Token</button>
                         <p style="color: #155724; margin-top: 10px; font-size: 12px;">Use this in your external service with: Authorization: Bearer \${tokenValue.substring(0, 8)}...</p>
-                    </div >
+                    </div>
 \`;
                 
                 document.getElementById('token-message').innerHTML = tokenHtml;
 
-                // Reset form
                 document.getElementById('token-name').value = '';
                 document.getElementById('token-description').value = '';
                 document.getElementById('token-expires').value = '';
 
-                // Reload tokens list after 1 second
                 setTimeout(() => window.loadTokens(), 1000);
             } catch (err) {
                 window.showMessage('token-message', 'Error: ' + err.message, 'error');
@@ -635,7 +714,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         };
  
         window.deleteNode = async function(nodeId) {
-            if (!confirm('Delete ' + nodeId + '?')) return;
+            if (!confirm(\`Delete \${nodeId}?\`)) return;
             try {
                 const res = await window.apiCall('/api/dashboard/sub-instances/' + nodeId, { method: 'DELETE' });
                 const d = await res.json();
@@ -647,7 +726,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         // View File - Video Player Modal
         window.viewFile = async function(hash) {
             try {
-                // No auth needed - endpoint is public
                 const res = await fetch('/api/file/' + hash);
                 const data = await res.json();
                 
@@ -708,11 +786,10 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                             </div>
                         </div>
                     </div>
-                \`;
+\`;
 
                 document.body.appendChild(modal);
 
-                // Close on outside click
                 modal.addEventListener('click', (e) => {
                     if (e.target === modal) modal.remove();
                 });
@@ -724,7 +801,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         // Download File
         window.downloadFile = async function(hash, filename) {
             try {
-                // No auth needed - endpoint is public
                 const res = await fetch('/api/file/' + hash);
                 const data = await res.json();
                 
@@ -777,13 +853,12 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 const progressItem = document.createElement('div');
                 progressItem.id = itemId;
                 progressItem.className = 'progress-item';
-                progressItem.innerHTML = '<div class="progress-item-header"><div class="progress-item-name">' + file.name + '</div><div class="progress-item-status">Uploading...</div></div><div class="progress-bar"><div class="progress-bar-fill"></div></div><div class="progress-info">0% - 0 KB / ' + window.formatBytes(file.size) + '</div>';
+                progressItem.innerHTML = \`<div class="progress-item-header"><div class="progress-item-name">\${file.name}</div><div class="progress-item-status">Uploading...</div></div><div class="progress-bar"><div class="progress-bar-fill"></div></div><div class="progress-info">0% - 0 KB / \${window.formatBytes(file.size)}</div>\`;
                 progressDiv.appendChild(progressItem);
  
                 const formData = new FormData();
                 formData.append('file', file);
                 
-                // ← NEW: Add title if provided
                 const titleInput = document.getElementById('upload-title');
                 if (titleInput && titleInput.value.trim()) {
                     formData.append('title', titleInput.value.trim());
@@ -803,22 +878,19 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     });
  
                     xhr.addEventListener('load', () => {
-                        // ← UPDATED: Handle 202 Accepted status
                         if (xhr.status === 202 || xhr.status === 200) {
                             const result = JSON.parse(xhr.responseText);
                             
-                            // Handle duplicate
                             if (result.is_duplicate) {
                                 progressItem.classList.add('success');
                                 progressItem.querySelector('.progress-item-status').textContent = '✅ Duplicate! Already in system.';
-                                progressItem.querySelector('.progress-info').innerHTML = '<strong>Title:</strong> ' + (result.title || result.filename) + '<br><strong>Hash:</strong> <code style="font-size: 11px;">' + result.hash.substring(0, 24) + '...</code>';
+                                progressItem.querySelector('.progress-info').innerHTML = \`<strong>Title:</strong> \${result.title || result.filename}<br><strong>Hash:</strong> <code style="font-size: 11px;">\${result.hash.substring(0, 24)}...</code>\`;
                             } else {
                                 progressItem.classList.add('success');
                                 progressItem.querySelector('.progress-item-status').textContent = '✅ Uploaded! Queued for distribution.';
-                                progressItem.querySelector('.progress-info').innerHTML = '<strong>Title:</strong> ' + (result.title || result.filename) + '<br><strong>Hash:</strong> <code style="font-size: 11px;">' + result.hash.substring(0, 24) + '...</code><br><strong>Status:</strong> ' + result.status;
+                                progressItem.querySelector('.progress-info').innerHTML = \`<strong>Title:</strong> \${result.title || result.filename}<br><strong>Hash:</strong> <code style="font-size: 11px;">\${result.hash.substring(0, 24)}...</code><br><strong>Status:</strong> \${result.status}\`;
                             }
                             
-                            // Auto-load queue and files after 1 second
                             setTimeout(() => {
                                 window.loadQueue();
                                 window.loadFiles();
@@ -845,7 +917,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 }
             }
             
-            // ← NEW: Clear title input after upload
             document.getElementById('upload-title').value = '';
         };
  
@@ -863,7 +934,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         }, 3000);
     </script>
 </body>
-</html>` ;
+</html>`;
 
 
 export const LOGIN_HTML = `<!DOCTYPE html>
