@@ -1,6 +1,39 @@
 import mongoose from 'mongoose';
 
 // ============ SCHEMAS ============
+const authTokenSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: true,           // e.g., "Scraper Instance 1"
+    },
+    token: {
+        type: String,
+        required: true,
+        unique: true,
+        index: true              // Fast token lookup
+    },
+    description: String,          // Optional notes about this token
+    created_at: {
+        type: Date,
+        default: Date.now,
+        index: true
+    },
+    last_used: {
+        type: Date,
+        default: null
+    },
+    status: {
+        type: String,
+        enum: ['active', 'revoked'],
+        default: 'active',
+        index: true
+    },
+    created_by: String,           // Admin username who created it
+    expires_at: {
+        type: Date,
+        default: null             // null = never expires; can set for temporary tokens
+    }
+});
 
 const mainR2Schema = new mongoose.Schema({
     bucket_name: { type: String, required: true, unique: true },
@@ -140,3 +173,4 @@ export const MainR2 = mongoose.model('MainR2', mainR2Schema);
 export const SubInstance = mongoose.model('SubInstance', subInstanceSchema);
 export const File = mongoose.model('File', fileSchema);
 export const UploadQueue = mongoose.model('UploadQueue', uploadQueueSchema);
+export const AuthToken = mongoose.model('AuthToken', authTokenSchema);

@@ -8,6 +8,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { MainR2, SubInstance, File, UploadQueue, AuthToken } from './utils/schema.js';
 import dotenv from 'dotenv';
 import { LOGIN_HTML, DASHBOARD_HTML } from './utils/utils.js';
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 dotenv.config({ path: "cert.env" });
 
