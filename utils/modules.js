@@ -168,20 +168,19 @@ async function deleteFromMainR2(hash) {
 
 // ============ GET SIGNED URL FROM SUB-INSTANCE ============
 
+// Inside modules.js on the MAIN instance
 async function getSignedUrlFromSubInstance(subInstance, hash) {
     try {
-        const url = `${subInstance.url}/api/signed-url?hash=${hash}`;
-        console.log(`[SIGNED-URL] 📝 Getting signed URL from ${subInstance.node_id}`);
-        console.log(`[SIGNED-URL]    URL: ${url}`);
-
-        const response = await axios.get(url, { timeout: 5000 });
-
-        console.log(`[SIGNED-URL] ✅ Got signed URL from ${subInstance.node_id}`);
-        console.log(`[SIGNED-URL]    Expires at: ${new Date(response.data.expires_at).toLocaleString()}`);
-
-        return response.data;
+        const response = await axios.get(`${subInstance.url}/api/signed-url`, {
+            params: { hash },
+            headers: { 
+                // This 'SUB_ADMIN_KEY' value must match the 'ADMIN_KEY' on the sub-instance
+                'Authorization': `Bearer ${process.env.SUB_ADMIN_KEY}` 
+            }
+        });
+        return response.data; 
     } catch (err) {
-        console.error(`[SIGNED-URL] ❌ Failed to get signed URL: ${err.message}`);
+        console.error(`[R2-UTILS] ❌ Node ${subInstance.node_id} rejected auth:`, err.message);
         return null;
     }
 }
