@@ -32,7 +32,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const SUB_ADMIN_KEY = process.env.SUB_ADMIN_KEY || 'admin-secret-key';
 
 // ← NEW: Upload and transfer limit constants
-const MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024;           // 1GB
+const MAX_FILE_SIZE = 3 * 512 * 1024 * 1024;           // 1GB
 const MAX_MONTHLY_TRANSFER = 10 * 1024 * 1024 * 1024;   // 10GB per node per month
 
 console.log(`⚙️  Main System Configuration:`);
