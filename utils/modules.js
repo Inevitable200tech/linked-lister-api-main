@@ -420,9 +420,6 @@ async function getSuitableNodes(fileSize) {
     return suitable.sort((a, b) => b.free_space - a.free_space);
 }
 
-// You don't need 'import FormData from "form-data"' anymore for this function
-// Node 18+ has global.FormData and global.Blob built-in
-
 
 async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash, title) {
     if (!subInstance || !subInstance.url) return null;
@@ -435,32 +432,35 @@ async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash
         console.log(`[UPLOAD-NODE] 📤 Streaming to ${subInstance.node_id}`);
         console.log(`[UPLOAD-NODE]    Size: ${(fileSizeInBytes / 1024 / 1024).toFixed(2)} MB`);
 
-        // Use Undici's FormData
         const fd = new UndiciFormData();
 
-        // Create a ReadStream and wrap it in a way Undici understands
+        // 🚨 THE FIX: 
+        // We create a 'File-like' object for Undici. 
+        // This ensures the Content-Disposition header is set correctly.
         const fileStream = fs.createReadStream(filePath);
         
         fd.append('file', {
             name: fileName,
-            type: 'application/octet-stream',
+            [Symbol.toStringTag]: 'File',
             stream: fileStream,
-            size: fileSizeInBytes
+            size: fileSizeInBytes,
+            type: 'application/octet-stream'
         });
 
         fd.append('hash', fileHash);
         fd.append('title', title || fileName);
 
-        console.log(`[UPLOAD-NODE] ⏳ Dispatching via Undici...`);
+        console.log(`[UPLOAD-NODE] ⏳ Dispatching to ${url}...`);
 
-        // request() is much more robust for large streams than fetch()
         const { statusCode, body } = await request(url, {
             method: 'POST',
             body: fd,
-            headersTimeout: 600000, // 10 minutes
-            bodyTimeout: 600000     // 10 minutes
+            // Long timeouts for large videos
+            headersTimeout: 600000, 
+            bodyTimeout: 600000
         });
 
+        // It is important to wait for the JSON response
         const result = await body.json();
 
         if (statusCode >= 200 && statusCode < 300) {
@@ -469,10 +469,11 @@ async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash
         }
 
         if (statusCode === 409) {
-            console.log(`[UPLOAD-NODE] ⚠️ Duplicate on ${subInstance.node_id}`);
+            console.log(`[UPLOAD-NODE] ⚠️ File already exists on node.`);
             return { isDuplicate: true, ...result };
         }
 
+        console.error(`[UPLOAD-NODE] ❌ Node rejected: ${JSON.stringify(result)}`);
         throw new Error(result.error || `Server responded with ${statusCode}`);
 
     } catch (err) {
