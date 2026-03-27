@@ -18,7 +18,7 @@ import {
     processUploadQueue,
     hashLargeFile
 } from './utils/modules.js';
-
+import fs from 'fs';
 dotenv.config({ path: "cert.env" });
 
 const app = express();
