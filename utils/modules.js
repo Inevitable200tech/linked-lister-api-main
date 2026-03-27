@@ -5,7 +5,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { MainR2, SubInstance, File, UploadQueue, AuthToken } from './schema.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
-
+import FormData from 'form-data';
 dotenv.config({ path: "cert.env" });
 
 
@@ -424,43 +424,56 @@ async function getSuitableNodes(fileSize) {
     return suitable.sort((a, b) => b.free_space - a.free_space);
 }
 
-async function uploadFileToSubInstance(subInstance, fileData, fileName, fileHash, title) {
+import fs from 'fs';
+import axios from 'axios';
+import FormData from 'form-data';
+
+async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash, title) {
     try {
         const url = `${subInstance.url}/api/upload`;
-        console.log(`[UPLOAD-NODE] 📤 Uploading to ${subInstance.node_id}`);
-        console.log(`[UPLOAD-NODE]    URL: ${url}`);
-        console.log(`[UPLOAD-NODE]    Filename: ${fileName}`);
-        console.log(`[UPLOAD-NODE]    Title: ${title || 'Not provided'}`);
-        console.log(`[UPLOAD-NODE]    Size: ${(fileData.length / 1024 / 1024).toFixed(2)} MB`);
+        
+        // Get actual file size from disk for logging and headers
+        const stats = fs.statSync(filePath);
+        const fileSizeInBytes = stats.size;
 
-        const FormData = (await import('form-data')).default;
+        console.log(`[UPLOAD-NODE] 📤 Streaming to ${subInstance.node_id}`);
+        console.log(`[UPLOAD-NODE]    URL: ${url}`);
+        console.log(`[UPLOAD-NODE]    Size: ${(fileSizeInBytes / 1024 / 1024).toFixed(2)} MB`);
+
         const formData = new FormData();
-        formData.append('file', fileData, fileName);
+        
+        // 🚨 CRITICAL: Use a ReadStream instead of fileData (Buffer)
+        const fileStream = fs.createReadStream(filePath);
+        formData.append('file', fileStream, {
+            filename: fileName,
+            knownLength: fileSizeInBytes // Helps the receiving server handle the stream
+        });
+        
         formData.append('hash', fileHash);
         formData.append('title', title || fileName);
 
-        console.log(`[UPLOAD-NODE] ⏳ Sending to node...`);
+        console.log(`[UPLOAD-NODE] ⏳ Streaming to node...`);
 
         const response = await axios.post(url, formData, {
-            headers: formData.getHeaders(),
-            timeout: 30000,
+            headers: {
+                ...formData.getHeaders(),
+                'Content-Length': formData.getLengthSync() // Optional but good for stability
+            },
+            timeout: 600000, // 10 minutes (videos take time to upload!)
             maxContentLength: Infinity,
             maxBodyLength: Infinity
         });
 
         console.log(`[UPLOAD-NODE] ✅ Upload successful to ${subInstance.node_id}`);
-        console.log(`[UPLOAD-NODE]    Bucket: ${response.data.bucket}`);
-        console.log(`[UPLOAD-NODE]    Key: ${response.data.key}`);
-
         return response.data;
+
     } catch (err) {
-        // If 409 Conflict is returned, it means the file is already on the sub-instance.
         if (err.response && err.response.status === 409) {
-            console.log(`[UPLOAD-NODE] ⚠️  File already exists on ${subInstance.node_id} (409 Conflict). Treating as success.`);
+            console.log(`[UPLOAD-NODE] ⚠️  File already exists on ${subInstance.node_id}.`);
             return {
                 isDuplicate: true,
-                bucket: err.response.data?.bucket || 'uploads', // Fallback if API doesn't return bucket info
-                key: err.response.data?.key || `uploads/${fileHash}`, // Fallback if API doesn't return key info
+                bucket: err.response.data?.bucket || 'uploads',
+                key: err.response.data?.key || `uploads/${fileHash}`,
                 ...err.response.data
             };
         }
