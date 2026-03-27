@@ -14,7 +14,6 @@ import {
     getSignedUrlFromSubInstance,
     verifyToken,
     verifyApiToken,
-    hashFile,
     monitorSubInstanceHealth,
     processUploadQueue,
     hashLargeFile

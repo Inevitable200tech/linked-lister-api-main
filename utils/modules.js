@@ -346,9 +346,6 @@ async function verifyApiToken(req, res, next) {
 
 // ============ UTILITY FUNCTIONS ============
 
-function hashFile(data) {
-    return crypto.createHash('sha256').update(data).digest('hex');
-}
 
 async function getActiveSubInstances() {
     return await SubInstance.find({ status: 'active' });
