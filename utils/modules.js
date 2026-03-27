@@ -580,7 +580,6 @@ export {
     updateMonthlyTransferUsage,
     verifyToken,
     verifyApiToken,
-    hashFile,
     getActiveSubInstances,
     getSubInstanceSpace,
     getSubInstanceSpaces,
