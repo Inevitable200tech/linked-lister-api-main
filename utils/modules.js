@@ -419,11 +419,11 @@ async function getSuitableNodes(fileSize) {
     return suitable.sort((a, b) => b.free_space - a.free_space);
 }
 
+// You don't need 'import FormData from "form-data"' anymore for this function
+// Node 18+ has global.FormData and global.Blob built-in
+
 async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash, title) {
-    if (!subInstance || !subInstance.url) {
-        console.error("[UPLOAD-NODE] ❌ Error: subInstance or URL is missing");
-        return null;
-    }
+    if (!subInstance || !subInstance.url) return null;
 
     try {
         const url = `${subInstance.url.replace(/\/$/, '')}/api/upload`;
@@ -433,25 +433,33 @@ async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash
         console.log(`[UPLOAD-NODE] 📤 Streaming to ${subInstance.node_id}`);
         console.log(`[UPLOAD-NODE]    Size: ${(fileSizeInBytes / 1024 / 1024).toFixed(2)} MB`);
 
-        const formData = new FormData();
-        const fileStream = fs.createReadStream(filePath);
+        // 1. Use the NATIVE Node.js FormData (global.FormData)
+        const fd = new FormData();
 
-        // Append the stream
-        formData.append('file', fileStream, {
-            filename: fileName,
-            knownLength: fileSizeInBytes 
+        // 2. Create a "Blob" from the file stream
+        // This is the "Magic" part: it doesn't load the file into memory,
+        // it just points fetch to the file on the disk.
+        const fileStream = fs.createReadStream(filePath);
+        
+        // We use an Object that mimics a Blob/File for the native fetch
+        fd.append('file', {
+            [Symbol.toStringTag]: 'File',
+            name: fileName,
+            stream: () => fileStream,
+            size: fileSizeInBytes,
+            type: 'application/octet-stream'
         });
-        formData.append('hash', fileHash);
-        formData.append('title', title || fileName);
+
+        fd.append('hash', fileHash);
+        fd.append('title', title || fileName);
 
         console.log(`[UPLOAD-NODE] ⏳ Sending via native fetch...`);
 
-        // Use native fetch (Node 18+)
         const response = await fetch(url, {
             method: 'POST',
-            body: formData,
-            // Native fetch automatically sets the correct Content-Type 
-            // and manages the stream length without buffering.
+            body: fd, 
+            // 🚨 DO NOT set headers manually. 
+            // Fetch will automatically set Content-Type with the correct boundary.
             signal: AbortSignal.timeout(600000) // 10 minute timeout
         });
 
@@ -462,25 +470,18 @@ async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash
             return result;
         }
 
-        // Handle specific error codes (like 409 Conflict)
         if (response.status === 409) {
             console.log(`[UPLOAD-NODE] ⚠️  File already exists on ${subInstance.node_id}.`);
-            return {
-                isDuplicate: true,
-                bucket: result.bucket || 'uploads',
-                key: result.key || `uploads/${fileHash}`,
-                ...result
-            };
+            return { isDuplicate: true, ...result };
         }
 
         throw new Error(result.error || `Server responded with ${response.status}`);
 
     } catch (err) {
-        // Handle Timeout error specifically
         if (err.name === 'TimeoutError') {
-            console.error(`[UPLOAD-NODE] ❌ Upload timed out after 10 minutes`);
+            console.error(`[UPLOAD-NODE] ❌ Upload timed out`);
         } else {
-            console.error(`[UPLOAD-NODE] ❌ Upload failed to ${subInstance.node_id}: ${err.message}`);
+            console.error(`[UPLOAD-NODE] ❌ Upload failed: ${err.message}`);
         }
         return null;
     }
