@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { MainR2, SubInstance, File, UploadQueue, AuthToken } from './schema.js';
 import dotenv from 'dotenv';
-
+import fs from 'fs';
 
 dotenv.config({ path: "cert.env" });
 
@@ -49,7 +49,8 @@ initializeR2Client();
 
 // ============ R2 OPERATIONS ============
 
-async function uploadToMainR2(fileName, fileBuffer, hash, title) {
+
+async function uploadToMainR2(fileName, filePath, hash, title) {
     try {
         if (!r2Client || !r2Config) {
             await initializeR2Client();
@@ -61,22 +62,29 @@ async function uploadToMainR2(fileName, fileBuffer, hash, title) {
 
         const key = `uploads/${hash}`;
 
+        // Get file stats for logging size correctly
+        const stats = fs.statSync(filePath);
+        const fileSizeInBytes = stats.size;
+
         // Sanitize title for R2 metadata headers
         const sanitizedTitle = (title || fileName)
             .substring(0, 100)
             .replace(/[^a-zA-Z0-9\-_\s]/g, '_')
             .replace(/\s+/g, '_');
 
-        console.log(`[R2-UPLOAD] 📤 Uploading to Main R2`);
+        console.log(`[R2-UPLOAD] 📤 Uploading to Main R2 (Streaming from Disk)`);
         console.log(`[R2-UPLOAD]    Bucket: ${r2Config.bucket_name}`);
         console.log(`[R2-UPLOAD]    Key: ${key}`);
-        console.log(`[R2-UPLOAD]    Title: ${sanitizedTitle}`);
-        console.log(`[R2-UPLOAD]    Size: ${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+        console.log(`[R2-UPLOAD]    Size: ${(fileSizeInBytes / 1024 / 1024).toFixed(2)} MB`);
+
+        // Create a ReadStream instead of using a Buffer
+        const fileStream = fs.createReadStream(filePath);
 
         const command = new PutObjectCommand({
             Bucket: r2Config.bucket_name,
             Key: key,
-            Body: fileBuffer,
+            Body: fileStream, // 🚨 Streaming happens here
+            ContentLength: fileSizeInBytes, // Recommended for streams
             ContentType: 'application/octet-stream',
             Metadata: {
                 'original-title': sanitizedTitle,
@@ -132,6 +140,17 @@ async function fetchFromMainR2(hash) {
         console.error(`[R2-FETCH] ❌ Fetch failed: ${err.message}`);
         throw err;
     }
+}
+
+export async function hashLargeFile(filePath) {
+    return new Promise((resolve, reject) => {
+        const hash = crypto.createHash('sha256'); // Change to md5 if that's what you used previously
+        const stream = fs.createReadStream(filePath);
+        
+        stream.on('error', err => reject(err));
+        stream.on('data', chunk => hash.update(chunk));
+        stream.on('end', () => resolve(hash.digest('hex')));
+    });
 }
 
 async function deleteFromMainR2(hash) {

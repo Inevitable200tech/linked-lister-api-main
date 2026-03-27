@@ -16,14 +16,20 @@ import {
     verifyApiToken,
     hashFile,
     monitorSubInstanceHealth,
-    processUploadQueue
+    processUploadQueue,
+    hashLargeFile
 } from './utils/modules.js';
 
 dotenv.config({ path: "cert.env" });
 
 const app = express();
 app.use(express.json());
-app.use(fileUpload({ useTempFiles: false }));
+app.use(fileUpload({
+    useTempFiles: true,
+    tempFileDir: '/tmp/', 
+    limits: { fileSize: 1024 * 1024 * 1024 }, // Set to 1GB to match your MAX_FILE_SIZE logic
+    abortOnLimit: false // Don't automatically abort - we'll handle it in the route to provide a custom error message
+}));
 
 mongoose.connect(process.env.MAIN_MONGODB_URI);
 
@@ -476,15 +482,20 @@ app.get('/api/public/file/:hash', verifyApiToken, async (req, res) => {
 // ============ FILE OPERATIONS - ASYNC UPLOAD ============
 
 app.post('/api/upload', async (req, res) => {
+    let tempFilePath = null; // Track the temp file so we can delete it later
+
     try {
         if (!req.files || !req.files.file) {
             return res.status(400).json({ error: 'No file provided' });
         }
 
         const file = req.files.file;
+        tempFilePath = file.tempFilePath; // Store the path to the disk file
         const { title } = req.body;
-        const hash = hashFile(file.data);
         const fileSize = file.size;
+
+        // 🚨 Calculate hash safely from disk using the stream helper
+        const hash = await hashLargeFile(tempFilePath);
 
         console.log('\n[UPLOAD] ═══════════════════════════════════════');
         console.log('[UPLOAD] 📤 File received');
@@ -493,7 +504,8 @@ app.post('/api/upload', async (req, res) => {
         console.log('[UPLOAD]    Title: ' + (title || 'Not provided'));
         console.log('[UPLOAD]    Size: ' + (fileSize / 1024 / 1024).toFixed(2) + ' MB');
 
-        // ← NEW: Check file size limit (1GB max)
+        // Check file size limit (1GB max)
+        const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1GB in bytes
         if (fileSize > MAX_FILE_SIZE) {
             console.log(`[UPLOAD] ❌ File exceeds 1GB limit`);
             console.log('[UPLOAD] ═══════════════════════════════════════\n');
@@ -528,10 +540,10 @@ app.post('/api/upload', async (req, res) => {
             return res.status(503).json({ error: 'Main R2 bucket not configured' });
         }
 
-        // Upload to Main R2
-        const r2Result = await uploadToMainR2(file.name, file.data, hash, title);
+        // 🚨 Pass tempFilePath instead of file.data to your R2 upload function
+        console.log('[UPLOAD] ☁️  Uploading to Main R2...');
+        const r2Result = await uploadToMainR2(file.name, tempFilePath, hash, title);
 
-        // Save metadata only to MongoDB (NO file data!)
         console.log('[UPLOAD] 💾 Saving metadata to MongoDB');
         const newFile = new File({
             hash,
@@ -576,6 +588,12 @@ app.post('/api/upload', async (req, res) => {
         console.error('[UPLOAD] ❌ Error: ' + err.message);
         console.log('[UPLOAD] ═══════════════════════════════════════\n');
         res.status(500).json({ error: err.message });
+    } finally {
+        // 🚨 ALWAYS clean up the temp file, whether successful or failed
+        if (tempFilePath && fs.existsSync(tempFilePath)) {
+            fs.unlinkSync(tempFilePath);
+            console.log(`[UPLOAD] 🧹 Cleaned up temporary file from disk`);
+        }
     }
 });
 
