@@ -118,10 +118,10 @@ async function fetchFromMainR2(key) {
 
         const response = await r2Client.send(command);
         const tempPath = `/tmp/${key.replace(/\//g, '_')}`; // Create a unique temp filename
-        
+
         // Use pipeline to stream from R2 directly to Disk
         await pipeline(response.Body, fs.createWriteStream(tempPath));
-        
+
         return tempPath; // Return the path to the file on disk
     } catch (err) {
         console.error('[R2-FETCH] ❌ Download failed:', err.message);
@@ -132,7 +132,7 @@ export async function hashLargeFile(filePath) {
     return new Promise((resolve, reject) => {
         const hash = crypto.createHash('sha256'); // Change to md5 if that's what you used previously
         const stream = fs.createReadStream(filePath);
-        
+
         stream.on('error', err => reject(err));
         stream.on('data', chunk => hash.update(chunk));
         stream.on('end', () => resolve(hash.digest('hex')));
@@ -178,12 +178,12 @@ async function getSignedUrlFromSubInstance(subInstance, hash) {
     try {
         const response = await axios.get(`${subInstance.url}/api/signed-url`, {
             params: { hash },
-            headers: { 
+            headers: {
                 // This 'SUB_ADMIN_KEY' value must match the 'ADMIN_KEY' on the sub-instance
-                'Authorization': `Bearer ${process.env.SUB_ADMIN_KEY}` 
+                'Authorization': `Bearer ${process.env.SUB_ADMIN_KEY}`
             }
         });
-        return response.data; 
+        return response.data;
     } catch (err) {
         console.error(`[R2-UTILS] ❌ Node ${subInstance.node_id} rejected auth:`, err.message);
         return null;
@@ -395,25 +395,34 @@ async function getSubInstanceSpaces() {
 }
 
 async function getSuitableNodes(fileSize) {
+    // 1. Get the health/space status of all nodes
     const spaces = await getSubInstanceSpaces();
     const suitable = [];
 
-    for (const nodeId in spaces) {
-        if (spaces[nodeId].free_space >= fileSize) {
+    // 2. Fetch the actual SubInstance documents from MongoDB to get their URLs
+    const activeNodes = await SubInstance.find({ status: 'active' });
+
+    for (const node of activeNodes) {
+        const spaceInfo = spaces[node.node_id];
+        
+        // Check if we have space info for this node and if it has enough room
+        if (spaceInfo && spaceInfo.free_space >= fileSize) {
             suitable.push({
-                nodeId,
-                ...spaces[nodeId]
+                ...node.toObject(), // Includes url, node_id, etc.
+                free_space: spaceInfo.free_space,
+                total_space: spaceInfo.total_space
             });
         }
     }
 
+    // Sort by most free space available
     return suitable.sort((a, b) => b.free_space - a.free_space);
 }
 
 async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash, title) {
     try {
         const url = `${subInstance.url}/api/upload`;
-        
+
         // Get actual file size from disk for logging and headers
         const stats = fs.statSync(filePath);
         const fileSizeInBytes = stats.size;
@@ -423,14 +432,14 @@ async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash
         console.log(`[UPLOAD-NODE]    Size: ${(fileSizeInBytes / 1024 / 1024).toFixed(2)} MB`);
 
         const formData = new FormData();
-        
+
         // 🚨 CRITICAL: Use a ReadStream instead of fileData (Buffer)
         const fileStream = fs.createReadStream(filePath);
         formData.append('file', fileStream, {
             filename: fileName,
             knownLength: fileSizeInBytes // Helps the receiving server handle the stream
         });
-        
+
         formData.append('hash', fileHash);
         formData.append('title', title || fileName);
 
@@ -508,30 +517,43 @@ async function monitorSubInstanceHealth() {
 
 async function processUploadQueue() {
     setInterval(async () => {
+        let tempFilePath = null; // Track path for cleanup
         try {
-            console.log('\n[QUEUE] ═══════════════════════════════════════');
-            console.log(`[QUEUE] Checking for pending uploads at ${new Date().toLocaleTimeString()}`);
             const pending = await UploadQueue.findOne({ status: 'pending' }).sort({ created_at: 1 });
             if (!pending) return;
+
+            console.log('\n[QUEUE] ═══════════════════════════════════════');
+            console.log(`[QUEUE] Processing: ${pending.filename} (${(pending.size / 1024 / 1024).toFixed(2)} MB)`);
 
             // 1. Mark as processing
             await UploadQueue.updateOne({ _id: pending._id }, { status: 'processing' });
 
-            // 2. Download from Main R2 to Local Disk (Streaming)
-            console.log(`[QUEUE] 📥 Downloading ${pending.hash} to temp storage...`);
-            const tempFilePath = await fetchFromMainR2(pending.main_r2_key);
+            // 2. Download from Main R2 to Local Disk
+            tempFilePath = await fetchFromMainR2(pending.main_r2_key);
+            
+            if (!tempFilePath || !fs.existsSync(tempFilePath)) {
+                throw new Error("Failed to download file from R2 to local temp storage");
+            }
 
             // 3. Find suitable nodes
             const nodes = await getSuitableNodes(pending.size);
+            console.log(`[QUEUE] Found ${nodes.length} suitable nodes for distribution`);
+
             let uploadedSuccessfully = false;
 
             for (const node of nodes) {
-                // 4. Stream from Disk to Sub-instance (using the fixed function from earlier)
+                // 🚨 Double check node validity to prevent "undefined" logs
+                if (!node.url) {
+                    console.log(`[QUEUE] ⚠️ Skipping node ${node.node_id} (Missing URL)`);
+                    continue;
+                }
+
+                // 4. Stream from Disk to Sub-instance
                 const result = await uploadFileToSubInstance(
-                    node, 
-                    tempFilePath, // Pass the path, not the buffer
-                    pending.filename, 
-                    pending.hash, 
+                    node, // This now contains .url and .node_id
+                    tempFilePath,
+                    pending.filename,
+                    pending.hash,
                     pending.title
                 );
 
@@ -540,33 +562,49 @@ async function processUploadQueue() {
                     // Update File metadata with new location
                     await File.updateOne(
                         { hash: pending.hash },
-                        { 
-                            $push: { locations: { sub_instance: node.node_id, bucket: result.bucket, key: result.key } },
+                        {
+                            $push: { 
+                                locations: { 
+                                    sub_instance: node.node_id, 
+                                    bucket: result.bucket || 'uploads', 
+                                    key: result.key || `uploads/${pending.hash}` 
+                                } 
+                            },
                             status: 'distributed'
                         }
                     );
-                    break; 
+                    console.log(`[QUEUE] ✅ Distributed successfully to ${node.node_id}`);
+                    break;
                 }
             }
 
-            // 5. CLEAN UP: Always delete the temp file from disk after distribution
-            if (fs.existsSync(tempFilePath)) {
-                fs.unlinkSync(tempFilePath);
-                console.log(`[QUEUE] 🧹 Cleaned up temp file: ${tempFilePath}`);
-            }
-
-            // 6. Update Queue Status
+            // 5. Update Queue Status based on success
             await UploadQueue.updateOne(
                 { _id: pending._id },
-                { status: uploadedSuccessfully ? 'completed' : 'failed' }
+                { 
+                    status: uploadedSuccessfully ? 'completed' : 'failed',
+                    error_message: uploadedSuccessfully ? null : 'No nodes accepted the file or connection failed'
+                }
             );
 
         } catch (err) {
             console.error('[QUEUE] ❌ Critical Error:', err.message);
+            // Revert status to failed if something broke
+            await UploadQueue.updateMany({ status: 'processing' }, { status: 'failed', error_message: err.message });
+        } finally {
+            // 6. ALWAYS CLEAN UP: Move this to 'finally' to ensure it runs even on errors
+            if (tempFilePath && fs.existsSync(tempFilePath)) {
+                try {
+                    fs.unlinkSync(tempFilePath);
+                    console.log(`[QUEUE] 🧹 Cleaned up temp file: ${tempFilePath}`);
+                } catch (e) {
+                    console.error(`[QUEUE] ⚠️ Cleanup failed: ${e.message}`);
+                }
+            }
+            console.log(`[QUEUE] ═══════════════════════════════════════\n`);
         }
-    }, 10000); // Check every 10 seconds
+    }, 10000);
 }
-
 // ============ EXPORTS ============
 
 export {
