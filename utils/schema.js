@@ -124,7 +124,6 @@ const uploadQueueSchema = new mongoose.Schema({
 // ============ INDEXES ============
 // Explicit indexes (this is the recommended way)
 
-fileSchema.index({ created_at: 1 }, { expireAfterSeconds: 2592000 }); // Auto-delete after 30 days
 fileSchema.index({ status: 1 });
 fileSchema.index({ hash: 1 }, { unique: true });   // unique is already there, but ok to reinforce
 
