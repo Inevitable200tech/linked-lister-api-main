@@ -420,59 +420,71 @@ async function getSuitableNodes(fileSize) {
 }
 
 async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash, title) {
-    try {
-        const url = `${subInstance.url}/api/upload`;
+    if (!subInstance || !subInstance.url) {
+        console.error("[UPLOAD-NODE] ❌ Error: subInstance or URL is missing");
+        return null;
+    }
 
-        // Get actual file size from disk for logging and headers
+    try {
+        const url = `${subInstance.url.replace(/\/$/, '')}/api/upload`;
         const stats = fs.statSync(filePath);
         const fileSizeInBytes = stats.size;
 
         console.log(`[UPLOAD-NODE] 📤 Streaming to ${subInstance.node_id}`);
-        console.log(`[UPLOAD-NODE]    URL: ${url}`);
         console.log(`[UPLOAD-NODE]    Size: ${(fileSizeInBytes / 1024 / 1024).toFixed(2)} MB`);
 
         const formData = new FormData();
-
-        // 🚨 CRITICAL: Use a ReadStream instead of fileData (Buffer)
         const fileStream = fs.createReadStream(filePath);
+
+        // Append the stream
         formData.append('file', fileStream, {
             filename: fileName,
-            knownLength: fileSizeInBytes // Helps the receiving server handle the stream
+            knownLength: fileSizeInBytes 
         });
-
         formData.append('hash', fileHash);
         formData.append('title', title || fileName);
 
-        console.log(`[UPLOAD-NODE] ⏳ Streaming to node...`);
+        console.log(`[UPLOAD-NODE] ⏳ Sending via native fetch...`);
 
-        const response = await axios.post(url, formData, {
-            headers: {
-                ...formData.getHeaders(),
-                'Content-Length': formData.getLengthSync() // Optional but good for stability
-            },
-            timeout: 600000, // 10 minutes (videos take time to upload!)
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
+        // Use native fetch (Node 18+)
+        const response = await fetch(url, {
+            method: 'POST',
+            body: formData,
+            // Native fetch automatically sets the correct Content-Type 
+            // and manages the stream length without buffering.
+            signal: AbortSignal.timeout(600000) // 10 minute timeout
         });
 
-        console.log(`[UPLOAD-NODE] ✅ Upload successful to ${subInstance.node_id}`);
-        return response.data;
+        const result = await response.json();
 
-    } catch (err) {
-        if (err.response && err.response.status === 409) {
+        if (response.ok) {
+            console.log(`[UPLOAD-NODE] ✅ Upload successful to ${subInstance.node_id}`);
+            return result;
+        }
+
+        // Handle specific error codes (like 409 Conflict)
+        if (response.status === 409) {
             console.log(`[UPLOAD-NODE] ⚠️  File already exists on ${subInstance.node_id}.`);
             return {
                 isDuplicate: true,
-                bucket: err.response.data?.bucket || 'uploads',
-                key: err.response.data?.key || `uploads/${fileHash}`,
-                ...err.response.data
+                bucket: result.bucket || 'uploads',
+                key: result.key || `uploads/${fileHash}`,
+                ...result
             };
         }
-        console.error(`[UPLOAD-NODE] ❌ Upload failed to ${subInstance.node_id}: ${err.message}`);
+
+        throw new Error(result.error || `Server responded with ${response.status}`);
+
+    } catch (err) {
+        // Handle Timeout error specifically
+        if (err.name === 'TimeoutError') {
+            console.error(`[UPLOAD-NODE] ❌ Upload timed out after 10 minutes`);
+        } else {
+            console.error(`[UPLOAD-NODE] ❌ Upload failed to ${subInstance.node_id}: ${err.message}`);
+        }
         return null;
     }
 }
-
 // ============ HEARTBEAT MONITOR ============
 
 async function monitorSubInstanceHealth() {
