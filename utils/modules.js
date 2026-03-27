@@ -9,6 +9,7 @@ import FormData from 'form-data';
 import { pipeline } from 'stream/promises'; // Use promises for easier async/await
 dotenv.config({ path: "cert.env" });
 
+import { request, FormData as UndiciFormData } from 'undici';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'main-secret-key-change-in-production';
 
@@ -422,11 +423,9 @@ async function getSuitableNodes(fileSize) {
 // You don't need 'import FormData from "form-data"' anymore for this function
 // Node 18+ has global.FormData and global.Blob built-in
 
+
 async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash, title) {
-    if (!subInstance || !subInstance.url) {
-        console.error("[UPLOAD-NODE] ❌ Error: subInstance or URL is missing");
-        return null;
-    }
+    if (!subInstance || !subInstance.url) return null;
 
     try {
         const url = `${subInstance.url.replace(/\/$/, '')}/api/upload`;
@@ -436,50 +435,48 @@ async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash
         console.log(`[UPLOAD-NODE] 📤 Streaming to ${subInstance.node_id}`);
         console.log(`[UPLOAD-NODE]    Size: ${(fileSizeInBytes / 1024 / 1024).toFixed(2)} MB`);
 
-        // 1. Use Native Node.js FormData
-        const fd = new FormData();
+        // Use Undici's FormData
+        const fd = new UndiciFormData();
 
-        // 2. 🚨 THE FIX: Use fs.openAsBlob()
-        // This creates a memory-safe, disk-backed Blob that 'fetch' natively understands.
-        const fileBlob = await fs.openAsBlob(filePath);
+        // Create a ReadStream and wrap it in a way Undici understands
+        const fileStream = fs.createReadStream(filePath);
+        
+        fd.append('file', {
+            name: fileName,
+            type: 'application/octet-stream',
+            stream: fileStream,
+            size: fileSizeInBytes
+        });
 
-        fd.append('file', fileBlob, fileName);
         fd.append('hash', fileHash);
         fd.append('title', title || fileName);
 
-        console.log(`[UPLOAD-NODE] ⏳ Sending via native fetch...`);
+        console.log(`[UPLOAD-NODE] ⏳ Dispatching via Undici...`);
 
-        const response = await fetch(url, {
+        // request() is much more robust for large streams than fetch()
+        const { statusCode, body } = await request(url, {
             method: 'POST',
             body: fd,
-            signal: AbortSignal.timeout(600000) // 10 minute timeout
+            headersTimeout: 600000, // 10 minutes
+            bodyTimeout: 600000     // 10 minutes
         });
 
-        const result = await response.json();
+        const result = await body.json();
 
-        if (response.ok) {
+        if (statusCode >= 200 && statusCode < 300) {
             console.log(`[UPLOAD-NODE] ✅ Upload successful to ${subInstance.node_id}`);
             return result;
         }
 
-        if (response.status === 409) {
-            console.log(`[UPLOAD-NODE] ⚠️  File already exists on ${subInstance.node_id}.`);
-            return {
-                isDuplicate: true,
-                bucket: result.bucket || 'uploads',
-                key: result.key || `uploads/${fileHash}`,
-                ...result
-            };
+        if (statusCode === 409) {
+            console.log(`[UPLOAD-NODE] ⚠️ Duplicate on ${subInstance.node_id}`);
+            return { isDuplicate: true, ...result };
         }
 
-        throw new Error(result.error || `Server responded with ${response.status}`);
+        throw new Error(result.error || `Server responded with ${statusCode}`);
 
     } catch (err) {
-        if (err.name === 'TimeoutError') {
-            console.error(`[UPLOAD-NODE] ❌ Upload timed out after 10 minutes`);
-        } else {
-            console.error(`[UPLOAD-NODE] ❌ Upload failed to ${subInstance.node_id}: ${err.message}`);
-        }
+        console.error(`[UPLOAD-NODE] ❌ Upload failed: ${err.message}`);
         return null;
     }
 }
