@@ -6,6 +6,7 @@ import { MainR2, SubInstance, File, UploadQueue, AuthToken } from './schema.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import FormData from 'form-data';
+import { pipeline } from 'stream/promises'; // Use promises for easier async/await
 dotenv.config({ path: "cert.env" });
 
 
@@ -108,40 +109,25 @@ async function uploadToMainR2(fileName, filePath, hash, title) {
     }
 }
 
-async function fetchFromMainR2(hash) {
+async function fetchFromMainR2(key) {
     try {
-        if (!r2Client || !r2Config) {
-            await initializeR2Client();
-        }
-
-        if (!r2Client) {
-            throw new Error('R2 client not initialized');
-        }
-
-        const key = `uploads/${hash}`;
-
-        console.log(`[R2-FETCH] 📥 Fetching from Main R2`);
-        console.log(`[R2-FETCH]    Bucket: ${r2Config.bucket_name}`);
-        console.log(`[R2-FETCH]    Key: ${key}`);
-
         const command = new GetObjectCommand({
             Bucket: r2Config.bucket_name,
             Key: key
         });
 
         const response = await r2Client.send(command);
-        const fileBuffer = await response.Body.transformToByteArray();
-
-        console.log(`[R2-FETCH] ✅ Fetched successfully`);
-        console.log(`[R2-FETCH]    Size: ${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB\n`);
-
-        return Buffer.from(fileBuffer);
+        const tempPath = `/tmp/${key.replace(/\//g, '_')}`; // Create a unique temp filename
+        
+        // Use pipeline to stream from R2 directly to Disk
+        await pipeline(response.Body, fs.createWriteStream(tempPath));
+        
+        return tempPath; // Return the path to the file on disk
     } catch (err) {
-        console.error(`[R2-FETCH] ❌ Fetch failed: ${err.message}`);
+        console.error('[R2-FETCH] ❌ Download failed:', err.message);
         throw err;
     }
 }
-
 export async function hashLargeFile(filePath) {
     return new Promise((resolve, reject) => {
         const hash = crypto.createHash('sha256'); // Change to md5 if that's what you used previously
@@ -424,10 +410,6 @@ async function getSuitableNodes(fileSize) {
     return suitable.sort((a, b) => b.free_space - a.free_space);
 }
 
-import fs from 'fs';
-import axios from 'axios';
-import FormData from 'form-data';
-
 async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash, title) {
     try {
         const url = `${subInstance.url}/api/upload`;
@@ -525,137 +507,64 @@ async function monitorSubInstanceHealth() {
 }
 
 async function processUploadQueue() {
-    console.log('[QUEUE] Starting upload queue processor...');
-    console.log('[QUEUE] Distributing files from Main R2 to sub-instances\n');
-
     setInterval(async () => {
         try {
-            const pending = await UploadQueue.findOne({ status: 'pending' });
-
+            console.log('\n[QUEUE] ═══════════════════════════════════════');
+            console.log(`[QUEUE] Checking for pending uploads at ${new Date().toLocaleTimeString()}`);
+            const pending = await UploadQueue.findOne({ status: 'pending' }).sort({ created_at: 1 });
             if (!pending) return;
 
-            console.log(`\n[QUEUE] ═══════════════════════════════════════`);
-            console.log(`[QUEUE] Processing: ${pending.hash}`);
-            console.log(`[QUEUE] Title: ${pending.title || 'Not provided'}`);
-            console.log(`[QUEUE] ═══════════════════════════════════════`);
+            // 1. Mark as processing
+            await UploadQueue.updateOne({ _id: pending._id }, { status: 'processing' });
 
-            await UploadQueue.updateOne(
-                { _id: pending._id },
-                { status: 'processing' }
-            );
+            // 2. Download from Main R2 to Local Disk (Streaming)
+            console.log(`[QUEUE] 📥 Downloading ${pending.hash} to temp storage...`);
+            const tempFilePath = await fetchFromMainR2(pending.main_r2_key);
 
-            const suitableNodes = await getSuitableNodes(pending.size);
-
-            if (suitableNodes.length === 0) {
-                console.log(`[QUEUE] ❌ No suitable nodes - file stays in Main R2`);
-                await UploadQueue.updateOne(
-                    { _id: pending._id },
-                    {
-                        status: 'failed',
-                        error_message: 'No suitable nodes available'
-                    }
-                );
-                console.log(`[QUEUE] ═══════════════════════════════════════\n`);
-                return;
-            }
-
+            // 3. Find suitable nodes
+            const nodes = await getSuitableNodes(pending.size);
             let uploadedSuccessfully = false;
-            for (const nodeInfo of suitableNodes) {
-                try {
-                    const subInstance = nodeInfo.instance;
 
-                    console.log(`[QUEUE]\n[QUEUE] Attempting upload to: ${subInstance.node_id}`);
+            for (const node of nodes) {
+                // 4. Stream from Disk to Sub-instance (using the fixed function from earlier)
+                const result = await uploadFileToSubInstance(
+                    node, 
+                    tempFilePath, // Pass the path, not the buffer
+                    pending.filename, 
+                    pending.hash, 
+                    pending.title
+                );
 
-                    // Check monthly transfer limit before uploading
-                    const limitCheck = await checkMonthlyTransferLimit(subInstance, pending.size);
-                    
-                    if (!limitCheck.allowed) {
-                        console.log(`[QUEUE] ⚠️  ${limitCheck.reason}`);
-                        console.log(`[QUEUE] 📊 Remaining this month: ${(limitCheck.remaining / 1024 / 1024 / 1024).toFixed(2)}GB`);
-                        console.log(`[QUEUE] ⚠️  Trying next node...\n`);
-                        continue;  // Skip this node and try next
-                    }
-
-                    // Fetch file from Main R2
-                    console.log(`[QUEUE] 📥 Fetching file from Main R2...`);
-                    const fileBuffer = await fetchFromMainR2(pending.hash);
-
-                    // Upload to sub-instance
-                    const uploadResult = await uploadFileToSubInstance(
-                        subInstance,
-                        fileBuffer,
-                        pending.filename,
-                        pending.hash,
-                        pending.title
-                    );
-
-                    if (!uploadResult) {
-                        console.log(`[QUEUE] ⚠️  Upload failed, trying next node...\n`);
-                        continue;
-                    }
-
-                    if (uploadResult.isDuplicate) {
-                        console.log(`[QUEUE] ✅ File already exists on ${subInstance.node_id}. Skipping bandwidth deduction.`);
-                    } else {
-                        console.log(`[QUEUE] ✅ Upload succeeded to ${subInstance.node_id}`);
-                        // Update monthly transfer usage
-                        await updateMonthlyTransferUsage(subInstance.node_id, pending.size);
-                    }
-
-                    // Update file metadata with new location
+                if (result) {
+                    uploadedSuccessfully = true;
+                    // Update File metadata with new location
                     await File.updateOne(
                         { hash: pending.hash },
-                        {
-                            status: 'distributed',
-                            locations: [{
-                                sub_instance: subInstance.node_id,
-                                bucket: uploadResult.bucket,
-                                key: uploadResult.key,
-                                status: 'active'
-                            }],
-                            main_r2_location: null
+                        { 
+                            $push: { locations: { sub_instance: node.node_id, bucket: result.bucket, key: result.key } },
+                            status: 'distributed'
                         }
                     );
-
-                    console.log(`[QUEUE] 📊 Metadata updated: distributed to ${subInstance.node_id}`);
-
-                    // Delete from Main R2
-                    await deleteFromMainR2(pending.hash);
-
-                    console.log(`[QUEUE] 🎉 File successfully moved from Main R2 to ${subInstance.node_id}`);
-
-                    uploadedSuccessfully = true;
-                    break;
-
-                } catch (err) {
-                    console.error(`[QUEUE] ❌ Error: ${err.message}`);
-                    continue;
+                    break; 
                 }
             }
 
-            if (uploadedSuccessfully) {
-                await UploadQueue.updateOne(
-                    { _id: pending._id },
-                    { status: 'completed' }
-                );
-                console.log(`[QUEUE] ✅ Completed: ${pending.hash}`);
-            } else {
-                await UploadQueue.updateOne(
-                    { _id: pending._id },
-                    {
-                        status: 'failed',
-                        error_message: 'All nodes failed or transfer limits exceeded'
-                    }
-                );
-                console.log(`[QUEUE] ❌ All nodes failed or limits exceeded for: ${pending.hash}`);
+            // 5. CLEAN UP: Always delete the temp file from disk after distribution
+            if (fs.existsSync(tempFilePath)) {
+                fs.unlinkSync(tempFilePath);
+                console.log(`[QUEUE] 🧹 Cleaned up temp file: ${tempFilePath}`);
             }
 
-            console.log(`[QUEUE] ═══════════════════════════════════════\n`);
+            // 6. Update Queue Status
+            await UploadQueue.updateOne(
+                { _id: pending._id },
+                { status: uploadedSuccessfully ? 'completed' : 'failed' }
+            );
 
         } catch (err) {
-            console.error('[QUEUE] Error:', err.message);
+            console.error('[QUEUE] ❌ Critical Error:', err.message);
         }
-    }, 5000);
+    }, 10000); // Check every 10 seconds
 }
 
 // ============ EXPORTS ============
