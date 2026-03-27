@@ -421,46 +421,44 @@ async function getSuitableNodes(fileSize) {
 }
 
 
+
+
 async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash, title) {
     if (!subInstance || !subInstance.url) return null;
 
     try {
         const url = `${subInstance.url.replace(/\/$/, '')}/api/upload`;
-        const stats = fs.statSync(filePath);
-        const fileSizeInBytes = stats.size;
+        
+        // 1. Create a disk-backed Blob (Node 19.8+)
+        // This is memory-efficient as it doesn't load the whole file into RAM at once
+        let fileBlob;
+        if (typeof fs.openAsBlob === 'function') {
+            fileBlob = await fs.openAsBlob(filePath);
+        } else {
+            // Fallback for Node 18.x
+            const buffer = fs.readFileSync(filePath);
+            fileBlob = new Blob([buffer]);
+        }
 
-        console.log(`[UPLOAD-NODE] 📤 Streaming to ${subInstance.node_id}`);
-        console.log(`[UPLOAD-NODE]    Size: ${(fileSizeInBytes / 1024 / 1024).toFixed(2)} MB`);
+        console.log(`[UPLOAD-NODE] 📤 Streaming to ${subInstance.node_id} (${(fileBlob.size / 1024 / 1024).toFixed(2)} MB)`);
 
         const fd = new UndiciFormData();
-
-        // 🚨 THE FIX: 
-        // We create a 'File-like' object for Undici. 
-        // This ensures the Content-Disposition header is set correctly.
-        const fileStream = fs.createReadStream(filePath);
         
-        fd.append('file', {
-            name: fileName,
-            [Symbol.toStringTag]: 'File',
-            stream: fileStream,
-            size: fileSizeInBytes,
-            type: 'application/octet-stream'
-        });
-
+        // 2. Append the Blob. 
+        // Providing the 3rd argument (fileName) is CRITICAL for express-fileupload
+        fd.append('file', fileBlob, fileName);
         fd.append('hash', fileHash);
         fd.append('title', title || fileName);
 
-        console.log(`[UPLOAD-NODE] ⏳ Dispatching to ${url}...`);
+        console.log(`[UPLOAD-NODE] ⏳ Dispatching to sub-instance...`);
 
         const { statusCode, body } = await request(url, {
             method: 'POST',
             body: fd,
-            // Long timeouts for large videos
             headersTimeout: 600000, 
             bodyTimeout: 600000
         });
 
-        // It is important to wait for the JSON response
         const result = await body.json();
 
         if (statusCode >= 200 && statusCode < 300) {
@@ -469,12 +467,12 @@ async function uploadFileToSubInstance(subInstance, filePath, fileName, fileHash
         }
 
         if (statusCode === 409) {
-            console.log(`[UPLOAD-NODE] ⚠️ File already exists on node.`);
+            console.log(`[UPLOAD-NODE] ⚠️ Duplicate on node.`);
             return { isDuplicate: true, ...result };
         }
 
         console.error(`[UPLOAD-NODE] ❌ Node rejected: ${JSON.stringify(result)}`);
-        throw new Error(result.error || `Server responded with ${statusCode}`);
+        return null;
 
     } catch (err) {
         console.error(`[UPLOAD-NODE] ❌ Upload failed: ${err.message}`);
