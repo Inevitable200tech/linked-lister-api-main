@@ -504,7 +504,6 @@ app.post('/api/upload', async (req, res) => {
         console.log('[UPLOAD]    Size: ' + (fileSize / 1024 / 1024).toFixed(2) + ' MB');
 
         // Check file size limit (1GB max)
-        const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1GB in bytes
         if (fileSize > MAX_FILE_SIZE) {
             console.log(`[UPLOAD] ❌ File exceeds 1GB limit`);
             console.log('[UPLOAD] ═══════════════════════════════════════\n');
