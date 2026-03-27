@@ -523,13 +523,13 @@ async function monitorSubInstanceHealth() {
 
 async function processUploadQueue() {
     setInterval(async () => {
-        let tempFilePath = null; // Track path for cleanup
+        let tempFilePath = null; 
         try {
             const pending = await UploadQueue.findOne({ status: 'pending' }).sort({ created_at: 1 });
             if (!pending) return;
 
             console.log('\n[QUEUE] ═══════════════════════════════════════');
-            console.log(`[QUEUE] Processing: ${pending.filename} (${(pending.size / 1024 / 1024).toFixed(2)} MB)`);
+            console.log(`[QUEUE] Processing: ${pending.filename}`);
 
             // 1. Mark as processing
             await UploadQueue.updateOne({ _id: pending._id }, { status: 'processing' });
@@ -538,25 +538,16 @@ async function processUploadQueue() {
             tempFilePath = await fetchFromMainR2(pending.main_r2_key);
             
             if (!tempFilePath || !fs.existsSync(tempFilePath)) {
-                throw new Error("Failed to download file from R2 to local temp storage");
+                throw new Error("Failed to download file from Main R2");
             }
 
             // 3. Find suitable nodes
             const nodes = await getSuitableNodes(pending.size);
-            console.log(`[QUEUE] Found ${nodes.length} suitable nodes for distribution`);
-
             let uploadedSuccessfully = false;
 
             for (const node of nodes) {
-                // 🚨 Double check node validity to prevent "undefined" logs
-                if (!node.url) {
-                    console.log(`[QUEUE] ⚠️ Skipping node ${node.node_id} (Missing URL)`);
-                    continue;
-                }
-
-                // 4. Stream from Disk to Sub-instance
                 const result = await uploadFileToSubInstance(
-                    node, // This now contains .url and .node_id
+                    node,
                     tempFilePath,
                     pending.filename,
                     pending.hash,
@@ -565,47 +556,58 @@ async function processUploadQueue() {
 
                 if (result) {
                     uploadedSuccessfully = true;
-                    // Update File metadata with new location
+                    // Update File metadata with node location
                     await File.updateOne(
                         { hash: pending.hash },
                         {
                             $push: { 
                                 locations: { 
                                     sub_instance: node.node_id, 
-                                    bucket: result.bucket || 'uploads', 
-                                    key: result.key || `uploads/${pending.hash}` 
+                                    bucket: result.bucket, 
+                                    key: result.key 
                                 } 
                             },
                             status: 'distributed'
                         }
                     );
-                    console.log(`[QUEUE] ✅ Distributed successfully to ${node.node_id}`);
                     break;
                 }
             }
 
-            // 5. Update Queue Status based on success
-            await UploadQueue.updateOne(
-                { _id: pending._id },
-                { 
-                    status: uploadedSuccessfully ? 'completed' : 'failed',
-                    error_message: uploadedSuccessfully ? null : 'No nodes accepted the file or connection failed'
-                }
-            );
+            // 4. Update Queue Status & DELETE FROM MAIN R2 IF SUCCESSFUL
+            if (uploadedSuccessfully) {
+                await UploadQueue.updateOne(
+                    { _id: pending._id },
+                    { status: 'completed' }
+                );
+
+                // 🚨 NEW: Delete from Main R2 to save space
+                console.log(`[QUEUE] 🗑️ Deleting from Main R2: ${pending.main_r2_key}`);
+                await deleteFromMainR2(pending.main_r2_key);
+                
+                // Optional: Remove the main_r2_location reference from the File document
+                await File.updateOne(
+                    { hash: pending.hash },
+                    { $unset: { main_r2_location: "" } }
+                );
+            } else {
+                await UploadQueue.updateOne(
+                    { _id: pending._id },
+                    { status: 'failed', error_message: 'No nodes accepted the file' }
+                );
+            }
 
         } catch (err) {
             console.error('[QUEUE] ❌ Critical Error:', err.message);
-            // Revert status to failed if something broke
-            await UploadQueue.updateMany({ status: 'processing' }, { status: 'failed', error_message: err.message });
+            await UploadQueue.updateOne(
+                { hash: pending?.hash }, 
+                { status: 'failed', error_message: err.message }
+            );
         } finally {
-            // 6. ALWAYS CLEAN UP: Move this to 'finally' to ensure it runs even on errors
+            // 5. Always clean up local /tmp/ file
             if (tempFilePath && fs.existsSync(tempFilePath)) {
-                try {
-                    fs.unlinkSync(tempFilePath);
-                    console.log(`[QUEUE] 🧹 Cleaned up temp file: ${tempFilePath}`);
-                } catch (e) {
-                    console.error(`[QUEUE] ⚠️ Cleanup failed: ${e.message}`);
-                }
+                fs.unlinkSync(tempFilePath);
+                console.log(`[QUEUE] 🧹 Cleaned up temp file: ${tempFilePath}`);
             }
             console.log(`[QUEUE] ═══════════════════════════════════════\n`);
         }
