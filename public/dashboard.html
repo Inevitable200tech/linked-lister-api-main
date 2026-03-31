@@ -1603,9 +1603,8 @@
                 formData.append("file", file)
 
                 const titleInput = document.getElementById("upload-title")
-                if (titleInput && titleInput.value.trim()) {
-                    formData.append("title", titleInput.value.trim())
-                }
+                const finalTitle = (titleInput && titleInput.value.trim()) ? titleInput.value.trim() : file.name;
+                formData.append("title", finalTitle)
 
                 try {
                     const xhr = new XMLHttpRequest()
