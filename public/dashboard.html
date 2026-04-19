@@ -785,6 +785,94 @@
             grid-template-columns: 1fr;
         }
     }
+
+    /* === NEW: SEARCH & PAGINATION UI === */
+    .files-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 25px;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+
+    .files-header h2 {
+        margin: 0 !important;
+    }
+
+    .search-wrapper {
+        position: relative;
+        min-width: 300px;
+    }
+
+    .search-wrapper input {
+        width: 100%;
+        padding: 12px 15px 12px 40px;
+        border: 2px solid #e0e0e0;
+        border-radius: 30px;
+        font-size: 14px;
+        transition: all 0.3s;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+
+    .search-wrapper input:focus {
+        border-color: #3498db;
+        box-shadow: 0 4px 10px rgba(52, 152, 219, 0.15);
+        outline: none;
+    }
+
+    .search-wrapper i {
+        position: absolute;
+        left: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #7f8c8d;
+    }
+
+    .pagination-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        margin-top: 30px;
+        flex-wrap: wrap;
+    }
+
+    .pagination-btn {
+        padding: 8px 16px;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        color: #2c3e50;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        min-width: 45px;
+    }
+
+    .pagination-btn:hover:not(:disabled) {
+        background: #f1f2f6;
+        border-color: #3498db;
+        color: #3498db;
+    }
+
+    .pagination-btn.active {
+        background: #3498db;
+        border-color: #3498db;
+        color: white;
+        box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
+    }
+
+    .pagination-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .pagination-info {
+        font-size: 14px;
+        color: #7f8c8d;
+        font-weight: 500;
+    }
 </style>
 
 <body>
@@ -942,8 +1030,15 @@
 
         <div id="files" class="tab-content">
             <div class="section">
-                <h2>📁 Distributed Files</h2>
+                <div class="files-header">
+                    <h2>📁 Distributed Files</h2>
+                    <div class="search-wrapper">
+                        <i>🔍</i>
+                        <input type="text" id="file-search" placeholder="Search by title..." oninput="window.handleSearch(event)">
+                    </div>
+                </div>
                 <div id="files-list" class="files-grid">Loading...</div>
+                <div id="files-pagination" class="pagination-container"></div>
             </div>
         </div>
 
@@ -985,6 +1080,56 @@
     <script>
         const token = localStorage.getItem("token")
         if (!token) window.location.href = "/"
+
+        // Pagination & Search State
+        let currentFilePage = 1;
+        let fileSearchTerm = "";
+        let searchDebounceTimer = null;
+
+        window.handleSearch = function(e) {
+            clearTimeout(searchDebounceTimer);
+            fileSearchTerm = e.target.value;
+            searchDebounceTimer = setTimeout(() => {
+                currentFilePage = 1; // Reset to page 1 on search
+                window.loadFiles();
+            }, 400);
+        }
+
+        window.changeFilePage = function(page) {
+            currentFilePage = page;
+            window.loadFiles();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        window.renderFilePagination = function(total, page, totalPages) {
+            const container = document.getElementById("files-pagination");
+            if (!container) return;
+
+            if (totalPages <= 1) {
+                container.innerHTML = "";
+                return;
+            }
+
+            let html = `
+                <button class="pagination-btn" onclick="window.changeFilePage(${page - 1})" ${page === 1 ? 'disabled' : ''}>Prev</button>
+            `;
+
+            // Simple pagination logic
+            const range = 2;
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === 1 || i === totalPages || (i >= page - range && i <= page + range)) {
+                    html += `<button class="pagination-btn ${i === page ? 'active' : ''}" onclick="window.changeFilePage(${i})">${i}</button>`;
+                } else if (i === page - range - 1 || i === page + range + 1) {
+                    html += `<span class="pagination-info">...</span>`;
+                }
+            }
+
+            html += `
+                <button class="pagination-btn" onclick="window.changeFilePage(${page + 1})" ${page === totalPages ? 'disabled' : ''}>Next</button>
+            `;
+
+            container.innerHTML = html;
+        }
 
         window.logout = function () {
             localStorage.removeItem("token")
@@ -1132,12 +1277,25 @@
 
         window.loadFiles = async function () {
             try {
-                const res = await window.apiCall("/api/files")
+                const url = `/api/files?page=${currentFilePage}&search=${encodeURIComponent(fileSearchTerm)}`;
+                const res = await window.apiCall(url)
                 const d = await res.json()
 
                 if (!d.success) {
                     document.getElementById("files-list").innerHTML = "<p>Error loading files</p>"
                     return
+                }
+
+                if (d.files.length === 0) {
+                    document.getElementById("files-list").innerHTML = `
+                        <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: #7f8c8d;">
+                            <p style="font-size: 48px;">🔍</p>
+                            <h3>No files found</h3>
+                            <p>Try searching for something else or upload a new file.</p>
+                        </div>
+                    `;
+                    document.getElementById("files-pagination").innerHTML = "";
+                    return;
                 }
 
                 const html = d.files.map(function (f) {
@@ -1179,7 +1337,8 @@
                 `
                 }).join("")
 
-                document.getElementById("files-list").innerHTML = html || "<p>No files yet</p>"
+                document.getElementById("files-list").innerHTML = html
+                window.renderFilePagination(d.total, d.page, d.totalPages);
             } catch (e) {
                 console.error(e)
                 document.getElementById("files-list").innerHTML = "<p>Error loading files</p>"
