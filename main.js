@@ -610,10 +610,32 @@ app.get('/api/upload-queue', verifyToken, async (req, res) => {
 
 app.get('/api/files', verifyToken, async (req, res) => {
     try {
-        const files = await File.find().sort({ created_at: -1 });
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 12; // 12 files per page looks good for a grid
+        const search = req.query.search || '';
+
+        const query = {};
+        if (search) {
+            query.$or = [
+                { title: { $regex: search, $options: 'i' } },
+                { filename: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const skip = (page - 1) * limit;
+
+        const [files, total] = await Promise.all([
+            File.find(query).sort({ created_at: -1 }).skip(skip).limit(limit),
+            File.countDocuments(query)
+        ]);
+
+        const totalPages = Math.ceil(total / limit);
+
         res.json({
             success: true,
-            total: files.length,
+            total: total,
+            page: page,
+            totalPages: totalPages,
             files: files.map(f => ({
                 hash: f.hash,
                 filename: f.filename,
