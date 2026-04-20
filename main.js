@@ -654,6 +654,63 @@ app.get('/api/files', verifyToken, async (req, res) => {
     }
 });
 
+app.post('/api/admin/sync-thumbnails', verifyToken, async (req, res) => {
+    try {
+        const instances = await SubInstance.find({ status: 'active' });
+        const results = {
+            total_nodes: instances.length,
+            nodes_processed: 0,
+            files_updated: 0,
+            errors: []
+        };
+
+        for (const node of instances) {
+            try {
+                console.log(`[SYNC] 🔄 Syncing thumbnails from node: ${node.node_id}`);
+                
+                // 1. Fix addresses on node first (just in case they are missing)
+                await axios.post(`${node.url.replace(/\/$/, '')}/api/admin/fix-thumbnail-addresses`, {}, {
+                    headers: { 'Authorization': `Bearer ${process.env.SUB_ADMIN_KEY}` }
+                }).catch(err => console.log(`[SYNC] ⚠️  Node ${node.node_id} fix-addresses failed: ${err.message}`));
+
+                // 2. Fetch file list from node
+                const response = await axios.get(`${node.url.replace(/\/$/, '')}/api/admin/files`, {
+                    headers: { 'Authorization': `Bearer ${process.env.SUB_ADMIN_KEY}` }
+                });
+
+                if (response.data && response.data.success) {
+                    const nodeFiles = response.data.files;
+                    console.log(`[SYNC]    Node reports ${nodeFiles.length} files`);
+
+                    for (const nf of nodeFiles) {
+                        if (nf.thumbnail_address) {
+                            const absoluteAddress = `${node.url.replace(/\/$/, '')}${nf.thumbnail_address}`;
+                            
+                            // Update main DB if thumbnail_address is missing
+                            const updateResult = await File.updateOne(
+                                { hash: nf.hash, $or: [{ thumbnail_address: null }, { thumbnail_address: '' }, { thumbnail_address: { $exists: false } }] },
+                                { thumbnail_address: absoluteAddress }
+                            );
+
+                            if (updateResult.modifiedCount > 0) {
+                                results.files_updated++;
+                            }
+                        }
+                    }
+                    results.nodes_processed++;
+                }
+            } catch (nodeError) {
+                console.error(`[SYNC] ❌ Error syncing node ${node.node_id}:`, nodeError.message);
+                results.errors.push({ node_id: node.node_id, error: nodeError.message });
+            }
+        }
+
+        res.json({ success: true, results });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ============ FILE STREAMING - GET FILE DETAILS WITH SIGNED URL ============
 
 app.get('/api/file/:hash', async (req, res) => {

@@ -924,7 +924,12 @@
 
         <div id="overview" class="tab-content active">
             <div class="section">
-                <h2>📊 System Status</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0;">📊 System Status</h2>
+                    <button id="sync-thumbs-btn" style="background: #27ae60;" onclick="window.syncThumbnails()">
+                        🔄 Sync Thumbnails
+                    </button>
+                </div>
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-value" id="stat-nodes">0</div>
@@ -1256,6 +1261,35 @@
 
                 document.getElementById("overview-nodes").innerHTML = nodeHtml || "<p>No nodes configured</p>"
             } catch (e) { console.error(e) }
+        }
+
+        window.syncThumbnails = async function () {
+            const btn = document.getElementById('sync-thumbs-btn');
+            if (!btn) return;
+            
+            const originalText = btn.innerHTML;
+            if (!confirm("This will scan all sub-instances and sync missing thumbnail addresses to the Main API. Continue?")) return;
+
+            btn.innerHTML = '⏳ Syncing...';
+            btn.disabled = true;
+
+            try {
+                const res = await window.apiCall("/api/admin/sync-thumbnails", { method: 'POST' });
+                const data = await res.json();
+
+                if (data.success) {
+                    const r = data.results;
+                    alert(`Sync Complete!\nNodes processed: ${r.nodes_processed}\nThumbnails updated: ${r.files_updated}\nErrors: ${r.errors.length}`);
+                    window.loadFiles(); // Refresh files list
+                } else {
+                    alert("Sync failed: " + (data.error || "Unknown error"));
+                }
+            } catch (err) {
+                alert("Error: " + err.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
         }
 
         window.loadMainR2 = async function () {
