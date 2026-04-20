@@ -408,11 +408,18 @@ async function getSuitableNodes(fileSize) {
         
         // Check if we have space info for this node and if it has enough room
         if (spaceInfo && spaceInfo.free_space >= fileSize) {
-            suitable.push({
-                ...node.toObject(), // Includes url, node_id, etc.
-                free_space: spaceInfo.free_space,
-                total_space: spaceInfo.total_space
-            });
+            // ← NEW: Check monthly transfer limit
+            const limitCheck = await checkMonthlyTransferLimit(node, fileSize);
+            
+            if (limitCheck.allowed) {
+                suitable.push({
+                    ...node.toObject(), // Includes url, node_id, etc.
+                    free_space: spaceInfo.free_space,
+                    total_space: spaceInfo.total_space
+                });
+            } else {
+                console.log(`[SUITABLE-NODES] ⚠️ Skipping node ${node.node_id}: Monthly transfer limit reached`);
+            }
         }
     }
 
@@ -570,6 +577,10 @@ async function processUploadQueue() {
                             status: 'distributed'
                         }
                     );
+
+                    // ← NEW: Update monthly transfer usage for this node
+                    await updateMonthlyTransferUsage(node.node_id, pending.size);
+
                     break;
                 }
             }
