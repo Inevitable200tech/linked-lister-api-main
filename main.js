@@ -654,61 +654,80 @@ app.get('/api/files', verifyToken, async (req, res) => {
     }
 });
 
+const syncTasks = new Map();
+
 app.post('/api/admin/sync-thumbnails', verifyToken, async (req, res) => {
     try {
+        const taskId = crypto.randomBytes(8).toString('hex');
         const instances = await SubInstance.find({ status: 'active' });
-        const results = {
+        
+        const task = {
+            id: taskId,
             total_nodes: instances.length,
             nodes_processed: 0,
+            current_node: null,
             files_updated: 0,
-            errors: []
+            status: 'processing',
+            errors: [],
+            started_at: new Date()
         };
+        
+        syncTasks.set(taskId, task);
 
-        for (const node of instances) {
-            try {
-                console.log(`[SYNC] 🔄 Syncing thumbnails from node: ${node.node_id}`);
-                
-                // 1. Fix addresses on node first (just in case they are missing)
-                await axios.post(`${node.url.replace(/\/$/, '')}/api/admin/fix-thumbnail-addresses`, {}, {
-                    headers: { 'Authorization': `Bearer ${process.env.SUB_ADMIN_KEY}` }
-                }).catch(err => console.log(`[SYNC] ⚠️  Node ${node.node_id} fix-addresses failed: ${err.message}`));
+        // Run in background
+        (async () => {
+            for (const node of instances) {
+                task.current_node = node.node_id;
+                try {
+                    console.log(`[SYNC-${taskId}] 🔄 Node: ${node.node_id}`);
+                    
+                    // 1. Fix addresses
+                    await axios.post(`${node.url.replace(/\/$/, '')}/api/admin/fix-thumbnail-addresses`, {}, {
+                        headers: { 'Authorization': `Bearer ${process.env.SUB_ADMIN_KEY}` },
+                        timeout: 30000
+                    }).catch(err => console.log(`[SYNC] ⚠️ Node ${node.node_id} fix failed: ${err.message}`));
 
-                // 2. Fetch file list from node
-                const response = await axios.get(`${node.url.replace(/\/$/, '')}/api/admin/files`, {
-                    headers: { 'Authorization': `Bearer ${process.env.SUB_ADMIN_KEY}` }
-                });
+                    // 2. Fetch files
+                    const response = await axios.get(`${node.url.replace(/\/$/, '')}/api/admin/files`, {
+                        headers: { 'Authorization': `Bearer ${process.env.SUB_ADMIN_KEY}` },
+                        timeout: 30000
+                    });
 
-                if (response.data && response.data.success) {
-                    const nodeFiles = response.data.files;
-                    console.log(`[SYNC]    Node reports ${nodeFiles.length} files`);
-
-                    for (const nf of nodeFiles) {
-                        if (nf.thumbnail_address) {
-                            const absoluteAddress = `${node.url.replace(/\/$/, '')}${nf.thumbnail_address}`;
-                            
-                            // Update main DB if thumbnail_address is missing
-                            const updateResult = await File.updateOne(
-                                { hash: nf.hash, $or: [{ thumbnail_address: null }, { thumbnail_address: '' }, { thumbnail_address: { $exists: false } }] },
-                                { thumbnail_address: absoluteAddress }
-                            );
-
-                            if (updateResult.modifiedCount > 0) {
-                                results.files_updated++;
+                    if (response.data && response.data.success) {
+                        for (const nf of response.data.files) {
+                            if (nf.thumbnail_address) {
+                                const abs = `${node.url.replace(/\/$/, '')}${nf.thumbnail_address}`;
+                                const up = await File.updateOne(
+                                    { hash: nf.hash, $or: [{ thumbnail_address: null }, { thumbnail_address: '' }, { thumbnail_address: { $exists: false } }] },
+                                    { thumbnail_address: abs }
+                                );
+                                if (up.modifiedCount > 0) task.files_updated++;
                             }
                         }
+                        task.nodes_processed++;
                     }
-                    results.nodes_processed++;
+                } catch (err) {
+                    console.error(`[SYNC-${taskId}] ❌ Node ${node.node_id} failed:`, err.message);
+                    task.errors.push({ node_id: node.node_id, error: err.message });
                 }
-            } catch (nodeError) {
-                console.error(`[SYNC] ❌ Error syncing node ${node.node_id}:`, nodeError.message);
-                results.errors.push({ node_id: node.node_id, error: nodeError.message });
             }
-        }
+            task.status = 'completed';
+            task.current_node = null;
+            
+            // Auto-cleanup after 1 hour
+            setTimeout(() => syncTasks.delete(taskId), 3600000);
+        })();
 
-        res.json({ success: true, results });
+        res.json({ success: true, taskId });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+app.get('/api/admin/sync-status/:taskId', verifyToken, (req, res) => {
+    const task = syncTasks.get(req.params.taskId);
+    if (!task) return res.status(404).json({ error: 'Sync task not found or expired' });
+    res.json({ success: true, task });
 });
 
 // ============ FILE STREAMING - GET FILE DETAILS WITH SIGNED URL ============

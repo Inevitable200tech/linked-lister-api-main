@@ -1270,23 +1270,55 @@
             const originalText = btn.innerHTML;
             if (!confirm("This will scan all sub-instances and sync missing thumbnail addresses to the Main API. Continue?")) return;
 
-            btn.innerHTML = '⏳ Syncing...';
+            btn.innerHTML = '⏳ Initializing...';
             btn.disabled = true;
 
             try {
                 const res = await window.apiCall("/api/admin/sync-thumbnails", { method: 'POST' });
-                const data = await res.json();
+                const startData = await res.json();
 
-                if (data.success) {
-                    const r = data.results;
-                    alert(`Sync Complete!\nNodes processed: ${r.nodes_processed}\nThumbnails updated: ${r.files_updated}\nErrors: ${r.errors.length}`);
-                    window.loadFiles(); // Refresh files list
-                } else {
-                    alert("Sync failed: " + (data.error || "Unknown error"));
+                if (!startData.success) {
+                    alert("Sync failed to start: " + (startData.error || "Unknown error"));
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    return;
                 }
+
+                const taskId = startData.taskId;
+                
+                // Start polling
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const statusRes = await window.apiCall(`/api/admin/sync-status/${taskId}`);
+                        const statusData = await statusRes.json();
+                        
+                        if (statusData.success) {
+                            const t = statusData.task;
+                            btn.innerHTML = `⏳ Syncing: Node ${t.nodes_processed + (t.status === 'processing' ? 1 : 0)}/${t.total_nodes} (${t.files_updated} updated)`;
+                            
+                            if (t.status === 'completed') {
+                                clearInterval(pollInterval);
+                                alert(`Sync Complete!\nNodes processed: ${t.nodes_processed}\nThumbnails updated: ${t.files_updated}\nErrors: ${t.errors.length}`);
+                                btn.innerHTML = originalText;
+                                btn.disabled = false;
+                                window.loadFiles();
+                            }
+                        } else {
+                            clearInterval(pollInterval);
+                            alert("Polling error: " + statusData.error);
+                            btn.innerHTML = originalText;
+                            btn.disabled = false;
+                        }
+                    } catch (err) {
+                        clearInterval(pollInterval);
+                        console.error(err);
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                    }
+                }, 2000);
+
             } catch (err) {
                 alert("Error: " + err.message);
-            } finally {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
