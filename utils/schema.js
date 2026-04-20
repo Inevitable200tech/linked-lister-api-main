@@ -89,6 +89,7 @@ const fileSchema = new mongoose.Schema({
         key: String,
         status: String
     }],
+    thumbnail_address: String,
 
     created_at: {
         type: Date,

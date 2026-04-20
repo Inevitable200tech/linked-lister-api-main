@@ -405,6 +405,7 @@ app.get('/api/public/files', verifyApiToken, async (req, res) => {
                 size: f.size,
                 status: f.status,
                 location: f.locations[0]?.sub_instance || 'Main R2',
+                thumbnail_address: f.thumbnail_address,
                 created_at: f.created_at
             }))
         });
@@ -466,6 +467,7 @@ app.get('/api/public/file/:hash', verifyApiToken, async (req, res) => {
                     bucket: location.bucket,
                     key: location.key
                 },
+                thumbnail_address: fileDoc.thumbnail_address,
                 created_at: fileDoc.created_at
             },
             download: {
@@ -643,6 +645,7 @@ app.get('/api/files', verifyToken, async (req, res) => {
                 size: f.size,
                 status: f.status,
                 location: f.locations[0]?.sub_instance || 'Main R2',
+                thumbnail_address: f.thumbnail_address,
                 created_at: f.created_at
             }))
         });
@@ -710,7 +713,8 @@ app.get('/api/file/:hash', async (req, res) => {
                 location: 'sub_instance',
                 sub_instance: location.sub_instance,
                 bucket: location.bucket,
-                key: location.key
+                key: location.key,
+                thumbnail_address: fileDoc.thumbnail_address
             },
             download: {
                 url: signedUrlData.signed_url,

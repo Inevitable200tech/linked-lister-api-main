@@ -446,9 +446,37 @@
     }
 
     .file-card-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
         color: white;
         padding: 15px;
+    }
+
+    .file-card-thumbnail {
+        width: 100%;
+        height: 160px;
+        background: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        position: relative;
+        border-bottom: 1px solid #ddd;
+    }
+
+    .file-card-thumbnail img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.5s;
+    }
+
+    .file-card:hover .file-card-thumbnail img {
+        transform: scale(1.05);
+    }
+
+    .file-card-thumbnail .no-thumb {
+        color: rgba(255, 255, 255, 0.3);
+        font-size: 40px;
     }
 
     .file-card-title {
@@ -1305,6 +1333,10 @@
 
                     return `
                     <div class="file-card">
+                        <div class="file-card-thumbnail">
+                            ${f.thumbnail_address ? `<img src="${f.thumbnail_address}" onerror="this.style.display='none'; this.nextElementSibling.style.display='block'">` : ""}
+                            <div class="no-thumb" style="${f.thumbnail_address ? 'display:none;' : ''}">🎬</div>
+                        </div>
                         <div class="file-card-header">
                             <div class="file-card-title">${f.title || f.filename}</div>
                             <div class="file-card-subtitle">${f.filename}</div>
@@ -1657,7 +1689,7 @@
                     </div>
                     <div class="modal-body">
                         <div class="video-container">
-                            <video class="video-player" controls style="width: 100%; height: auto;">
+                            <video class="video-player" controls style="width: 100%; height: auto;" poster="${file.thumbnail_address || ''}">
                                 <source src="${downloadUrl}" type="video/mp4">
                                 Your browser does not support the video tag.
                             </video>

@@ -574,6 +574,7 @@ async function processUploadQueue() {
                                     key: result.key 
                                 } 
                             },
+                            thumbnail_address: result.thumbnail_address ? `${node.url.replace(/\/$/, '')}${result.thumbnail_address}` : null,
                             status: 'distributed'
                         }
                     );
