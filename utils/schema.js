@@ -47,7 +47,7 @@ const subInstanceSchema = new mongoose.Schema({
             default: () => new Date().toISOString().slice(0, 7)
         },
         data_transferred: { type: Number, default: 0 },
-        limit_bytes: { type: Number, default: 10 * 1024 * 1024 * 1024 },
+        limit_bytes: { type: Number, default: 20 * 1024 * 1024 * 1024 },
         reset_date: {
             type: Date,
             default: () => {
